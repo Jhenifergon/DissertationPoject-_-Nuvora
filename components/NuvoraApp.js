@@ -8,6 +8,7 @@ import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
 import { recommendAction } from '@/lib/recommendation';
 import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
 import { explainPressure } from '@/lib/explain';
+import { combineWorkloadPressure } from '@/lib/pressure';
 
 const questions = [
   { id: 'mood', title: 'How is your workload feeling today?', max: 4, low: 'Calm', high: 'Very overwhelming' },
@@ -424,9 +425,13 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
         setError(r.error || "We couldn't calculate a result from those answers. Please try again.");
         return;
       }
-      setRisk(r);
-      await saveCheckin(uid, { answers, risk: r });
-      setData(d => ({ ...d, checkins: [{ answers, risk: r, createdAt: new Date().toISOString() }, ...d.checkins] }));
+      // The self-report score (r) is combined with the student's current
+      // task deadlines here — see lib/pressure.js and the Phase 2 item 5
+      // proposal for the full rule set, rationale, and scenario table.
+      const combined = combineWorkloadPressure(r, data.tasks);
+      setRisk(combined);
+      await saveCheckin(uid, { answers, risk: combined });
+      setData(d => ({ ...d, checkins: [{ answers, risk: combined, createdAt: new Date().toISOString() }, ...d.checkins] }));
     } catch {
       setError("We couldn't reach Nuvora just now. Your answers are still here — please try again.");
     } finally {
@@ -447,6 +452,7 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
       <small>{risk.band.toUpperCase()} WORKLOAD PRESSURE</small>
       <h1>{risk.message}</h1>
       <p>This result is not a diagnosis. It only helps Nuvora adjust today’s support.</p>
+      <details><summary>Why this result?</summary><ul className="explanation-list">{explainPressure(risk, data.tasks).map((line, i) => <li key={i}>{line}</li>)}</ul></details>
       <button className="primary" onClick={() => { resetDraft(); go(risk.band === 'Higher' ? 'overwhelmed' : 'today'); }}>Choose my next step</button>
     </div>
   </>;
