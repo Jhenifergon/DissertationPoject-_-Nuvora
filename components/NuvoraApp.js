@@ -1,9 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { BookOpen, Check, ChevronLeft, CircleHelp, Heart, Home, Leaf, ListTodo, LogOut, Menu, Plus, Settings, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
+import { BookOpen, Check, ChevronLeft, CircleHelp, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, firebaseEnabled } from '@/lib/firebase';
-import { addTask, completeCurrentStep, defaultSettings, loadData, removeTask, saveCheckin, saveSettings, toggleTask } from '@/lib/store';
+import { addTask, completeCurrentStep, defaultSettings, loadData, removeTask, saveCheckin, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
+import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
+import { recommendAction } from '@/lib/recommendation';
+import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
+import { explainPressure } from '@/lib/explain';
 
 const questions = [
   { id: 'mood', title: 'How is your workload feeling today?', max: 4, low: 'Calm', high: 'Very overwhelming' },
@@ -14,6 +18,15 @@ const questions = [
 ];
 const activities = [['Reframe overwhelm', 'Pick one task. Name only its first physical action.'], ['Two-minute task starter', 'Work for two minutes, with permission to stop.'], ['Sort your brain dump', 'List everything, then circle only what is due in 48 hours.']];
 const nav = [['today', Home, 'Today'], ['tasks', ListTodo, 'Tasks'], ['learn', BookOpen, 'Learn'], ['progress', TrendingUp, 'Progress'], ['support', Heart, 'Support']];
+const priorities = [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']];
+const BARRIERS = [
+  { id: 'start', label: 'I do not know where to start' },
+  { id: 'big', label: 'The task feels too big' },
+  { id: 'energy', label: 'I have very low energy' },
+  { id: 'reset', label: 'I need a short reset' },
+  { id: 'support', label: 'I need to ask someone for help' },
+];
+const GENERIC_ERROR = 'That did not save. Please try again in a moment.';
 
 // A small accessible status/error message. Errors use role="alert" so
 // assistive technology announces them immediately; confirmations use the
@@ -23,8 +36,6 @@ function StatusMessage({ text, tone = 'status' }) {
   return <p className={`status-msg ${tone}`} role={tone === 'error' ? 'alert' : 'status'} aria-live={tone === 'error' ? 'assertive' : 'polite'}>{text}</p>;
 }
 
-const GENERIC_ERROR = "That did not save. Please try again in a moment.";
-
 export default function NuvoraApp() {
   const [user, setUser] = useState(firebaseEnabled ? undefined : { uid: 'demo', email: 'demo@nuvora.local' });
   const [screen, setScreen] = useState('today');
@@ -33,6 +44,10 @@ export default function NuvoraApp() {
   const [settings, setSettings] = useState(defaultSettings);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState('');
+  // The daily check-in's in-progress answers live here (not inside the
+  // Checkin screen itself) so that leaving and returning to the check-in
+  // within the same session does not lose what was already answered.
+  const [checkinDraft, setCheckinDraft] = useState({ step: 0, answers: {} });
 
   useEffect(() => (firebaseEnabled ? onAuthStateChanged(auth, setUser) : undefined), []);
   useEffect(() => { if (user) loadData(user.uid).then(d => { setData(d); setSettings(d.settings); }); }, [user]);
@@ -77,7 +92,7 @@ export default function NuvoraApp() {
       <div className="content">
         {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} />}
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} />}
-        {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} />}
+        {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn />}
         {screen === 'progress' && <Progress data={data} />}
         {screen === 'support' && <Support data={data} />}
@@ -125,81 +140,148 @@ function Auth() {
   </section></main>;
 }
 
-function Today({ data, go, uid, setData }) {
-  const [stepBusy, setStepBusy] = useState(false);
-  const [stepStatus, setStepStatus] = useState({ text: '', tone: 'status' });
-  const risk = data.checkins[0]?.risk;
-  const open = data.tasks.filter(t => !t.done);
-  const top = open[0];
-  const stepDone = top?.currentStep?.done;
+// --- Today -------------------------------------------------------------
 
-  async function markStepDone() {
-    if (stepBusy || !top) return;
-    setStepBusy(true);
-    setStepStatus({ text: '', tone: 'status' });
-    try {
-      const updated = await completeCurrentStep(uid, top.id, true);
-      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === top.id ? updated : t)) }));
-      setStepStatus({ text: 'Saved. That step is done — the assignment stays open until you choose to complete it.', tone: 'status' });
-    } catch {
-      setStepStatus({ text: GENERIC_ERROR, tone: 'error' });
-    } finally {
-      setStepBusy(false);
-    }
-  }
+function Today({ data, go, uid, setData }) {
+  const risk = data.checkins[0]?.risk;
+  const recommendation = recommendAction(data.tasks, risk?.band);
 
   return <>
     <div className="welcome"><div><small>GOOD MORNING</small><h1>How are things feeling?</h1></div><div className="avatar" aria-hidden="true">J</div></div>
-    {!risk ? <button className="checkin-card" onClick={() => go('checkin')}><div><b>Take your daily check-in</b><span>Five gentle questions · about 1 minute</span></div><Sparkles /></button> : <RiskCard risk={risk} />}
+    {!risk ? <button className="checkin-card" onClick={() => go('checkin')}><div><b>Take your daily check-in</b><span>Five gentle questions · about 1 minute</span></div><Sparkles /></button> : <RiskCard risk={risk} tasks={data.tasks} />}
     <button className="overwhelmed" onClick={() => go('overwhelmed')}><Heart /> I’m feeling overwhelmed</button>
     <div className="section-title"><h2>One small next step</h2><button onClick={() => go('tasks')}>View plan</button></div>
-    {top ? <article className="task focus">
-      <div className="module">{top.module}</div>
-      <h3>{top.title}</h3>
-      <p>{risk?.band === 'Higher' ? `Let's only open ${top.title.toLowerCase()}. You can stop after that.` : top.currentStep?.text}</p>
-      <button className="primary" disabled={stepBusy || stepDone} onClick={markStepDone}>
-        <Check /> {stepDone ? 'Step complete' : stepBusy ? 'Saving…' : 'Mark this step done'}
-      </button>
-      <StatusMessage text={stepStatus.text} tone={stepStatus.tone} />
-    </article> : <Empty title="Your plan is clear" text="That is enough for today." />}
+    {recommendation ? <FocusTask key={recommendation.task.id} task={recommendation.task} actionText={recommendation.actionText} uid={uid} setData={setData} /> : <Empty title="Your plan is clear" text="That is enough for today." />}
     <h2>Today’s plan</h2>
-    {data.tasks.filter(t => t.bucket === 'today').slice(0, 3).map(t => <MiniTask key={t.id} task={t} />)}
+    {data.tasks.filter(t => effectiveBucket(t) === 'today' && !t.done).slice(0, 3).map(t => <MiniTask key={t.id} task={t} />)}
   </>;
 }
 
-function RiskCard({ risk }) {
+function RiskCard({ risk, tasks }) {
+  const explanation = explainPressure(risk, tasks);
   return <article className={`risk ${risk.band.toLowerCase()}`}>
     <div className="score">{risk.score}</div>
     <div>
       <small>WORKLOAD PRESSURE · {risk.band.toUpperCase()}</small>
       <h3>{risk.message}</h3>
-      <details><summary>Why this result?</summary><p>This transparent score combines workload feeling (30%), task initiation (25%), focus (20%), rest (15%) and confidence (10%). It is supportive, not diagnostic.</p></details>
+      <details>
+        <summary>Why this result?</summary>
+        <ul className="explanation-list">{explanation.map((line, i) => <li key={i}>{line}</li>)}</ul>
+      </details>
     </div>
   </article>;
+}
+
+// The focused task on Today: shows the recommended step and lets the
+// student mark it done, edit it, try a different suggested step, or
+// generate the next rule-based step once the current one is complete.
+// None of this text is personalised or AI-generated — it is a fixed set
+// of small, deterministic templates.
+function FocusTask({ task, actionText, uid, setData }) {
+  const [mode, setMode] = useState('view'); // view | editing | choosing
+  const [draftText, setDraftText] = useState(task.currentStep?.text || '');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState({ text: '', tone: 'status' });
+  const stepDone = task.currentStep?.done;
+
+  function applyLocally(updatedTask) {
+    setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updatedTask : t)) }));
+  }
+
+  async function run(action, successText) {
+    if (busy) return;
+    setBusy(true);
+    setStatus({ text: '', tone: 'status' });
+    try {
+      const updated = await action();
+      if (updated) applyLocally(updated);
+      setStatus({ text: successText, tone: 'status' });
+      setMode('view');
+    } catch {
+      setStatus({ text: GENERIC_ERROR, tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <article className="task focus">
+    <div className="module">{task.module}</div>
+    <h3>{task.title}</h3>
+    <small className="due-label">{relativeDueLabel(task.due)}</small>
+
+    {mode === 'view' && <p>{actionText}</p>}
+    {mode === 'editing' && <div className="panel">
+      <label>Edit this step<textarea value={draftText} onChange={e => setDraftText(e.target.value)} rows={2} /></label>
+      <div className="row">
+        <button onClick={() => setMode('view')} disabled={busy}>Cancel</button>
+        <button className="primary" disabled={busy || !draftText.trim()} onClick={() => run(async () => setCurrentStep(uid, task.id, makeCustomStep(task, draftText)), 'Step updated.')}>Save</button>
+      </div>
+    </div>}
+    {mode === 'choosing' && <div className="panel">
+      <p>Try a different small step:</p>
+      {suggestAlternativeSteps(task).map(alt => (
+        <button key={alt.id} className="option" disabled={busy} onClick={() => run(async () => setCurrentStep(uid, task.id, alt), 'Step updated.')}>{alt.text}</button>
+      ))}
+      <button onClick={() => setMode('view')} disabled={busy}>Cancel</button>
+    </div>}
+
+    {mode === 'view' && !stepDone && <div className="row">
+      <button className="primary" disabled={busy} onClick={() => run(() => completeCurrentStep(uid, task.id, true), 'Saved. That step is done — the assignment stays open until you choose to complete it.')}>
+        <Check /> {busy ? 'Saving…' : 'Mark this step done'}
+      </button>
+      <button disabled={busy} onClick={() => { setDraftText(task.currentStep?.text || ''); setMode('editing'); }}><Pencil /> Edit</button>
+      <button disabled={busy} onClick={() => setMode('choosing')}>Try a different step</button>
+    </div>}
+    {mode === 'view' && stepDone && <div className="row">
+      <span className="step-complete-badge"><Check /> Step complete</span>
+      <button disabled={busy} onClick={() => run(async () => setCurrentStep(uid, task.id, nextStepAfter(task)), 'Here is a next small step.')}>Generate next step</button>
+    </div>}
+    <StatusMessage text={status.text} tone={status.tone} />
+  </article>;
+}
+
+// --- Tasks ---------------------------------------------------------------
+
+function TaskForm({ initial, onCancel, onSave, saving }) {
+  return <form className="panel" onSubmit={e => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    onSave({ title: f.get('title'), module: f.get('module'), due: f.get('due'), priority: f.get('priority') });
+  }}>
+    <label>Task name<input name="title" defaultValue={initial?.title} required autoFocus /></label>
+    <label>Module<select name="module" defaultValue={initial?.module || 'Dissertation'}><option>Dissertation</option><option>Database Systems</option><option>Web Development</option><option>Other</option></select></label>
+    <label>Due date<input name="due" type="date" defaultValue={initial?.due} /></label>
+    <label>Priority<select name="priority" defaultValue={initial?.priority || 'normal'}>{priorities.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+    {!initial && <p className="hint">Nuvora will create a small first step automatically.</p>}
+    <div className="row">
+      <button type="button" onClick={onCancel} disabled={saving}>Cancel</button>
+      <button className="primary" disabled={saving}>{saving ? 'Saving…' : (initial ? 'Save changes' : 'Add task')}</button>
+    </div>
+  </form>;
 }
 
 function Tasks({ data, uid, setData }) {
   const [tab, setTab] = useState('today');
   const [adding, setAdding] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [busyIds, setBusyIds] = useState(() => new Set());
   const [error, setError] = useState('');
-  const filtered = data.tasks.filter(t => t.bucket === tab);
+  const [undo, setUndo] = useState(null); // { id, title }
+  const filtered = data.tasks.filter(t => effectiveBucket(t) === tab);
 
-  async function create(e) {
-    e.preventDefault();
-    if (creating) return;
-    const f = new FormData(e.currentTarget);
-    const title = f.get('title');
+  async function create(fields) {
+    if (saving) return;
     const task = {
-      title,
-      module: f.get('module'),
-      due: f.get('due'),
+      title: fields.title,
+      module: fields.module,
+      due: fields.due,
+      priority: fields.priority,
       bucket: tab,
       done: false,
-      currentStep: { id: crypto.randomUUID(), text: `Open ${title} and write down one small first action.`, done: false, completedAt: null },
+      currentStep: { id: crypto.randomUUID(), text: `Open ${fields.title} and write down one small first action.`, done: false, completedAt: null },
     };
-    setCreating(true);
+    setSaving(true);
     setError('');
     try {
       const saved = await addTask(uid, task);
@@ -208,7 +290,22 @@ function Tasks({ data, uid, setData }) {
     } catch {
       setError(GENERIC_ERROR);
     } finally {
-      setCreating(false);
+      setSaving(false);
+    }
+  }
+
+  async function saveEdit(id, fields) {
+    if (saving) return;
+    setSaving(true);
+    setError('');
+    try {
+      const updated = await updateTask(uid, id, fields);
+      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === id ? updated : t)) }));
+      setEditingId(null);
+    } catch {
+      setError(GENERIC_ERROR);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -225,47 +322,101 @@ function Tasks({ data, uid, setData }) {
     }
   }
 
+  async function toggle(t) {
+    await runOnTask(t.id, async () => {
+      await toggleTask(uid, t.id, !t.done);
+      setData(d => ({ ...d, tasks: d.tasks.map(x => (x.id === t.id ? { ...x, done: !x.done } : x)) }));
+      setUndo(!t.done ? { id: t.id, title: t.title } : null);
+    });
+  }
+
+  async function undoComplete() {
+    if (!undo) return;
+    const { id } = undo;
+    setUndo(null);
+    await runOnTask(id, async () => {
+      await toggleTask(uid, id, false);
+      setData(d => ({ ...d, tasks: d.tasks.map(x => (x.id === id ? { ...x, done: false } : x)) }));
+    });
+  }
+
+  async function remove(t) {
+    if (!window.confirm(`Delete "${t.title}"? This cannot be undone.`)) return;
+    await runOnTask(t.id, async () => {
+      await removeTask(uid, t.id);
+      setData(d => ({ ...d, tasks: d.tasks.filter(x => x.id !== t.id) }));
+    });
+  }
+
   return <>
     <div className="page-title"><h1>My plan</h1><button className="icon filled" onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button></div>
     <div className="tabs">{['today', 'week', 'later'].map(t => <button className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t}</button>)}</div>
-    {adding && <form className="panel" onSubmit={create}>
-      <h2>Add a manageable task</h2>
-      <label>Task name<input name="title" required autoFocus /></label>
-      <label>Module<select name="module"><option>Dissertation</option><option>Database Systems</option><option>Web Development</option><option>Other</option></select></label>
-      <label>Due date<input name="due" type="date" /></label>
-      <p className="hint">Nuvora will create a small first step automatically.</p>
-      <div className="row">
-        <button type="button" onClick={() => setAdding(false)} disabled={creating}>Cancel</button>
-        <button className="primary" disabled={creating}>{creating ? 'Adding…' : 'Add task'}</button>
-      </div>
-    </form>}
+    {adding && <TaskForm saving={saving} onCancel={() => setAdding(false)} onSave={create} />}
     <StatusMessage text={error} tone="error" />
-    {filtered.map(t => <article className={`task row-task ${t.done ? 'done' : ''}`} key={t.id}>
-      <button className="check" aria-label={t.done ? `Mark ${t.title} as not done` : `Mark ${t.title} as done`} disabled={busyIds.has(t.id)}
-        onClick={() => runOnTask(t.id, async () => { await toggleTask(uid, t.id, !t.done); setData(d => ({ ...d, tasks: d.tasks.map(x => (x.id === t.id ? { ...x, done: !x.done } : x)) })); })}>
-        {t.done && <Check />}
-      </button>
-      <div><small>{t.module} {t.due && `· ${t.due}`}</small><h3>{t.title}</h3><p>{t.currentStep?.text}</p></div>
-      <button className="icon trash" aria-label={`Delete ${t.title}`} disabled={busyIds.has(t.id)}
-        onClick={() => runOnTask(t.id, async () => { await removeTask(uid, t.id); setData(d => ({ ...d, tasks: d.tasks.filter(x => x.id !== t.id) })); })}>
-        <Trash2 />
-      </button>
-    </article>)}
-    {!filtered.length && <Empty title="Nothing here yet" text="Add one task when you are ready." />}
+    {undo && <div className="status-msg status" role="status">
+      “{undo.title}” marked complete. <button className="link" onClick={undoComplete}>Undo</button>
+    </div>}
+    {filtered.map(t => t.id === editingId ? (
+      <TaskForm key={t.id} initial={t} saving={saving} onCancel={() => setEditingId(null)} onSave={fields => saveEdit(t.id, fields)} />
+    ) : (
+      <article className={`task row-task ${t.done ? 'done' : ''}`} key={t.id}>
+        <button className="check" aria-label={t.done ? `Mark ${t.title} as not done` : `Mark ${t.title} as done`} disabled={busyIds.has(t.id)} onClick={() => toggle(t)}>
+          {t.done && <Check />}
+        </button>
+        <div>
+          <small>{t.module} · {relativeDueLabel(t.due)}{t.priority === 'high' && ' · High priority'}</small>
+          <h3>{t.title}</h3>
+          <p>{t.currentStep?.text}</p>
+        </div>
+        <button className="icon" aria-label={`Edit ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => setEditingId(t.id)}><Pencil /></button>
+        <button className="icon trash" aria-label={`Delete ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => remove(t)}><Trash2 /></button>
+      </article>
+    ))}
+    {!filtered.length && !adding && <Empty title="Nothing here yet" text="Add one task when you are ready." />}
   </>;
 }
 
-function Checkin({ uid, data, setData, go }) {
-  const [step, setStep] = useState(0), [answers, setAnswers] = useState({}), [risk, setRisk] = useState(null);
-  const [error, setError] = useState(''), [submitting, setSubmitting] = useState(false);
+// --- Checkin ---------------------------------------------------------------
+
+function Checkin({ uid, data, setData, go, draft, setDraft }) {
+  const [risk, setRisk] = useState(null);
+  const [incomplete, setIncomplete] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const { step, answers } = draft;
   const q = questions[step];
+
+  function setAnswer(value) {
+    setDraft(d => ({ ...d, answers: { ...d.answers, [q.id]: value } }));
+    setError('');
+  }
+  function resetDraft() { setDraft({ step: 0, answers: {} }); }
 
   async function next() {
     if (submitting) return;
-    if (!answers[q.id]) return setError('Choose the option that feels closest.');
-    setError('');
-    if (step < questions.length - 1) return setStep(step + 1);
+    if (answers[q.id] === undefined) return setError('Choose the option that feels closest, or “Not sure”.');
+    if (step < questions.length - 1) return setDraft(d => ({ ...d, step: d.step + 1 }));
+
+    // Do not silently substitute a neutral score for anything marked "not
+    // sure" — if any answer is incomplete, we say so plainly instead of
+    // calculating a band from guessed data.
+    const hasUnsure = questions.some(qq => answers[qq.id] === 'unsure');
+    if (hasUnsure) {
+      setSubmitting(true);
+      try {
+        await saveCheckin(uid, { answers, risk: null, incomplete: true });
+        setData(d => ({ ...d, checkins: [{ answers, risk: null, incomplete: true, createdAt: new Date().toISOString() }, ...d.checkins] }));
+        setIncomplete(true);
+      } catch {
+        setError("We couldn't save that. Please try again.");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     setSubmitting(true);
+    setError('');
     try {
       const res = await fetch('/api/risk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(answers) });
       const r = await res.json();
@@ -283,19 +434,28 @@ function Checkin({ uid, data, setData, go }) {
     }
   }
 
+  if (incomplete) return <div className="result">
+    <Leaf /><h1>That’s okay.</h1>
+    <p>We don’t have enough information from today’s answers to calculate a workload-pressure band. Your answers have been saved. Here’s one small step anyway.</p>
+    <button className="primary" onClick={() => { resetDraft(); go('today'); }}>Back to Today</button>
+  </div>;
+
   if (risk) return <>
-    <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
+    <button className="back" onClick={() => { resetDraft(); go('today'); }}><ChevronLeft /> Today</button>
     <div className="result">
       <div className={`big-score ${risk.band.toLowerCase()}`}>{risk.score}</div>
       <small>{risk.band.toUpperCase()} WORKLOAD PRESSURE</small>
       <h1>{risk.message}</h1>
       <p>This result is not a diagnosis. It only helps Nuvora adjust today’s support.</p>
-      <button className="primary" onClick={() => go(risk.band === 'Higher' ? 'overwhelmed' : 'today')}>Choose my next step</button>
+      <button className="primary" onClick={() => { resetDraft(); go(risk.band === 'Higher' ? 'overwhelmed' : 'today'); }}>Choose my next step</button>
     </div>
   </>;
 
   return <>
-    <button className="back" onClick={() => (step ? setStep(step - 1) : go('today'))}><ChevronLeft /> Back</button>
+    <div className="row" style={{ justifyContent: 'space-between' }}>
+      <button className="back" onClick={() => (step ? setDraft(d => ({ ...d, step: d.step - 1 })) : go('today'))}><ChevronLeft /> Back</button>
+      <button className="link" onClick={() => go('today')}>Exit for now</button>
+    </div>
     <div className="progressbar" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={questions.length} aria-label={`Question ${step + 1} of ${questions.length}`}>
       <span style={{ width: `${((step + 1) / questions.length) * 100}%` }} />
     </div>
@@ -303,14 +463,17 @@ function Checkin({ uid, data, setData, go }) {
     <h1>{q.title}</h1>
     <div className="scale" role="radiogroup" aria-label={q.title}>
       {Array.from({ length: q.max }, (_, i) => i + 1).map(n => (
-        <button key={n} role="radio" aria-checked={answers[q.id] === n} onClick={() => setAnswers({ ...answers, [q.id]: n })} className={answers[q.id] === n ? 'selected' : ''}>{n}</button>
+        <button key={n} role="radio" aria-checked={answers[q.id] === n} onClick={() => setAnswer(n)} className={answers[q.id] === n ? 'selected' : ''}>{n}</button>
       ))}
     </div>
     <div className="scale-label"><span>{q.low}</span><span>{q.high}</span></div>
+    <button role="radio" aria-checked={answers[q.id] === 'unsure'} className={`option not-sure ${answers[q.id] === 'unsure' ? 'selected' : ''}`} onClick={() => setAnswer('unsure')}>Not sure / prefer not to answer</button>
     <StatusMessage text={error} tone="error" />
     <button className="primary bottom" disabled={submitting} onClick={next}>{submitting ? 'Saving…' : 'Continue'}</button>
   </>;
 }
+
+// --- Learn / Progress / Support / Settings ---------------------------------
 
 function Learn() {
   return <>
@@ -327,7 +490,8 @@ function Learn() {
 
 function Progress({ data }) {
   const completed = data.tasks.filter(t => t.done).length;
-  const avg = data.checkins.length ? Math.round(data.checkins.reduce((a, c) => a + c.risk.score, 0) / data.checkins.length) : 0;
+  const scored = data.checkins.filter(c => c.risk);
+  const avg = scored.length ? Math.round(scored.reduce((a, c) => a + c.risk.score, 0) / scored.length) : 0;
   return <>
     <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
     <div className="stats">
@@ -338,8 +502,7 @@ function Progress({ data }) {
     <h2>Recent check-ins</h2>
     {data.checkins.slice(0, 7).map((c, i) => <div className="trend" key={c.id || i}>
       <span>{new Date(c.createdAt?.seconds ? c.createdAt.seconds * 1000 : c.createdAt || Date.now()).toLocaleDateString()}</span>
-      <div><i style={{ width: `${c.risk.score}%` }} /></div>
-      <b>{c.risk.score}</b>
+      {c.risk ? <><div><i style={{ width: `${c.risk.score}%` }} /></div><b>{c.risk.score}</b></> : <span className="incomplete-tag">Incomplete</span>}
     </div>)}
     {!data.checkins.length && <Empty title="Your trends will appear here" text="Complete a check-in whenever it feels helpful." />}
   </>;
@@ -389,19 +552,31 @@ function Setting({ label, text, checked, disabled, onChange }) {
   return <label className="setting"><div><b>{label}</b><p>{text}</p></div><input type="checkbox" checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)} /></label>;
 }
 
+// --- Overwhelmed Mode (barrier-based) ---------------------------------------
+
 function Overwhelmed({ data, uid, setData, go }) {
+  const [barrier, setBarrier] = useState(null);
   const [done, setDone] = useState(false);
+  const [chosenAlt, setChosenAlt] = useState(null);
+  const [supportMessage, setSupportMessage] = useState('');
+  const [copyStatus, setCopyStatus] = useState({ text: '', tone: 'status' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const task = data.tasks.find(t => !t.done);
 
-  async function markDone() {
+  useEffect(() => {
+    if (barrier === 'support' && task) {
+      setSupportMessage(`Hi — I'm finding "${task.title}" difficult to manage right now and could use a hand. Could we talk it through?`);
+    }
+  }, [barrier, task]);
+
+  async function markDone(action) {
     if (busy || !task) { setDone(true); return; }
     setBusy(true);
     setError('');
     try {
-      const updated = await completeCurrentStep(uid, task.id, true);
-      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
+      const updated = await action();
+      if (updated) setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
       setDone(true);
     } catch {
       setError(GENERIC_ERROR);
@@ -410,28 +585,74 @@ function Overwhelmed({ data, uid, setData, go }) {
     }
   }
 
+  async function copySupportMessage() {
+    setCopyStatus({ text: '', tone: 'status' });
+    try {
+      await navigator.clipboard.writeText(supportMessage);
+      setCopyStatus({ text: 'Copied. Nothing is sent automatically.', tone: 'status' });
+    } catch {
+      setCopyStatus({ text: "We couldn't copy that automatically — you can select and copy the text above.", tone: 'error' });
+    }
+  }
+
+  if (done) return <div className="overwhelmed-page">
+    <Leaf /><small>OVERWHELMED MODE</small>
+    <h1>One step down.</h1>
+    <p>That is genuinely enough for right now.</p>
+    <button className="primary" onClick={() => go('today')}>Back to Today</button>
+  </div>;
+
   return <div className="overwhelmed-page">
     <Leaf /><small>OVERWHELMED MODE</small>
-    {done ? <>
-      <h1>One step down.</h1>
-      <p>That is genuinely enough for right now.</p>
-      <button className="primary" onClick={() => go('today')}>Back to Today</button>
-    </> : <>
-      <h1>Let’s make everything smaller.</h1>
-      <p>You do not need to solve the whole day.</p>
-      <article><small>YOUR ONE STEP</small><h2>{task ? `Only open “${task.title}”.` : 'Take one slow breath.'}</h2><p>You can stop immediately after that.</p></article>
-      <button className="primary" disabled={busy} onClick={markDone}>{busy ? 'Saving…' : 'I did this step'}</button>
-      <button onClick={() => go('today')}>Not now</button>
-      <StatusMessage text={error} tone="error" />
-      <span>No shame. You’ve got this.</span>
-    </>}
+    <h1>Let’s make everything smaller.</h1>
+    <p>What is making this difficult right now?</p>
+    <div className="scale-vertical" role="radiogroup" aria-label="What is making this difficult right now?">
+      {BARRIERS.map(b => (
+        <button key={b.id} role="radio" aria-checked={barrier === b.id} className={`option ${barrier === b.id ? 'selected' : ''}`} onClick={() => { setBarrier(b.id); setChosenAlt(null); }}>{b.label}</button>
+      ))}
+    </div>
+
+    {barrier === 'start' && <article><small>ONE SMALL ACTION</small>
+      <h2>{task ? `Just open "${task.title}". Nothing else needed.` : 'Just open the relevant file or page.'}</h2>
+      <button className="primary" disabled={busy} onClick={() => markDone(() => completeCurrentStep(uid, task.id, true))}>{busy ? 'Saving…' : 'I opened it'}</button>
+    </article>}
+
+    {barrier === 'big' && <article><small>CHOOSE ONE PART</small>
+      {!chosenAlt ? (task ? suggestAlternativeSteps(task).map(alt => (
+        <button key={alt.id} className="option" onClick={() => setChosenAlt(alt)}>{alt.text}</button>
+      )) : <p>Pick one small section or question to focus on.</p>) : <>
+        <p>{chosenAlt.text}</p>
+        <button className="primary" disabled={busy} onClick={() => markDone(() => setCurrentStep(uid, task.id, { ...chosenAlt, done: true, completedAt: new Date().toISOString() }))}>{busy ? 'Saving…' : 'I did this'}</button>
+      </>}
+    </article>}
+
+    {barrier === 'energy' && <article><small>JUST TWO MINUTES</small>
+      <h2>Set a two-minute timer. You have permission to stop after that.</h2>
+      <button className="primary" disabled={busy} onClick={() => markDone(() => task && completeCurrentStep(uid, task.id, true))}>{busy ? 'Saving…' : 'I tried for two minutes'}</button>
+    </article>}
+
+    {barrier === 'reset' && <article><small>ONE BRIEF RESET</small>
+      <h2>{activities[0][0]}</h2>
+      <p>{activities[0][1]}</p>
+      <button className="primary" onClick={() => go('today')}>I’m ready to continue</button>
+    </article>}
+
+    {barrier === 'support' && <article><small>A MESSAGE YOU CONTROL</small>
+      <label>Edit before sending it yourself<textarea value={supportMessage} onChange={e => setSupportMessage(e.target.value)} rows={3} /></label>
+      <button className="primary" onClick={copySupportMessage}>Copy message</button>
+      <StatusMessage text={copyStatus.text} tone={copyStatus.tone} />
+    </article>}
+
+    <StatusMessage text={error} tone="error" />
+    <button onClick={() => go('today')}>Not now</button>
+    <span>No shame. You’ve got this.</span>
   </div>;
 }
 
 function MiniTask({ task }) {
   return <div className="mini">
     <span className={task.done ? 'checked' : ''}>{task.done && <Check />}</span>
-    <div><b>{task.title}</b><small>{task.currentStep?.text}</small></div>
+    <div><b>{task.title}</b><small>{relativeDueLabel(task.due)} · {task.currentStep?.text}</small></div>
   </div>;
 }
 function Empty({ title, text }) { return <div className="empty"><Leaf /><h3>{title}</h3><p>{text}</p></div>; }

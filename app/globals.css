@@ -5,3 +5,12 @@
 .status-msg.status{background:#e4f3ef;color:#2c6b60}
 .status-msg.error{background:#fbe9ec;color:#8a2f43}
 :focus-visible{outline:3px solid var(--purple);outline-offset:2px}
+.explanation-list{margin:8px 0 0;padding-left:18px;font-size:.85em;line-height:1.5}
+.option{display:block;width:100%;text-align:left;padding:12px 14px;margin:6px 0;border-radius:12px;border:1px solid #e2dcf5;background:#fff;min-height:44px}
+.option.selected{border-color:var(--purple);background:#f4effc}
+.option.not-sure{color:#6b6478;font-style:italic}
+.scale-vertical{display:flex;flex-direction:column;margin:10px 0}
+.step-complete-badge{display:inline-flex;align-items:center;gap:6px;color:#2c6b60;font-size:.9em}
+.incomplete-tag{font-size:.8em;color:#8a7f9a;font-style:italic}
+.link{background:none;border:none;color:var(--purple);text-decoration:underline;padding:6px;min-height:44px}
+.due-label{color:#7a7188;display:block;margin:2px 0 8px}
