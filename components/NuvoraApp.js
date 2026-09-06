@@ -9,6 +9,8 @@ import { recommendAction } from '@/lib/recommendation';
 import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
 import { explainPressure } from '@/lib/explain';
 import { combineWorkloadPressure } from '@/lib/pressure';
+import { avatarInitial, displayNameOrFallback, timeOfDayGreeting } from '@/lib/greeting';
+import { availableModules } from '@/lib/modules';
 
 const questions = [
   { id: 'mood', title: 'How is your workload feeling today?', max: 4, low: 'Calm', high: 'Very overwhelming' },
@@ -91,7 +93,7 @@ export default function NuvoraApp() {
         <p>Nuvora provides academic support, not medical advice or diagnosis.</p>
       </div>}
       <div className="content">
-        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} />}
+        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn />}
@@ -105,8 +107,25 @@ export default function NuvoraApp() {
   </main>;
 }
 
-function Logo() { return <div className="logo"><span>●●●</span> Nuvora</div>; }
-function Splash() { return <main><section className="phone splash"><Logo /><p>A calmer way to move forward.</p></section></main>; }
+// A small, friendly cloud mascot, matching the brand's hand-drawn wireframe
+// style. `mood` only changes the mouth/eyes — never the body colour — so it
+// stays visually calm rather than becoming an alarm indicator.
+function Mascot({ size = 64, mood = 'calm' }) {
+  const mouth = { calm: 'M40 55 Q52 63 64 55', worried: 'M40 58 Q52 52 64 58', neutral: 'M42 56 Q52 60 62 56' }[mood];
+  return <svg className="mascot" width={size} height={size * 0.75} viewBox="0 0 104 78" aria-hidden="true">
+    <ellipse cx="52" cy="60" rx="40" ry="7" fill="var(--purple-soft)" />
+    <ellipse cx="52" cy="48" rx="46" ry="21" fill="var(--purple)" opacity="0.85" />
+    <circle cx="28" cy="37" r="21" fill="var(--purple)" opacity="0.85" />
+    <circle cx="76" cy="37" r="21" fill="var(--purple)" opacity="0.85" />
+    <circle cx="52" cy="27" r="25" fill="var(--purple)" opacity="0.85" />
+    <circle cx="40" cy="42" r="3.2" fill="var(--ink)" />
+    <circle cx="64" cy="42" r="3.2" fill="var(--ink)" />
+    <path d={mouth} stroke="var(--ink)" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+  </svg>;
+}
+
+function Logo() { return <div className="logo"><Mascot size={26} /> Nuvora</div>; }
+function Splash() { return <main><section className="phone splash"><Mascot size={110} /><Logo /><p>A calmer way to move forward.</p></section></main>; }
 
 function Auth() {
   const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [password, setPassword] = useState('');
@@ -143,12 +162,28 @@ function Auth() {
 
 // --- Today -------------------------------------------------------------
 
-function Today({ data, go, uid, setData }) {
+function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy }) {
   const risk = data.checkins[0]?.risk;
   const recommendation = recommendAction(data.tasks, risk?.band);
 
+  // Genuine Calm Mode: rather than only changing colours, this collapses
+  // the whole dashboard to the single next step when Calm Mode is on —
+  // one primary action, no stats, no secondary explanations. Everything
+  // else stays reachable via the nav bar underneath, so no functionality
+  // is lost, just decluttered.
+  if (settings.calmMode && recommendation) {
+    return <div className="calm-focus">
+      <Mascot size={70} mood="calm" />
+      <div className="calm-heading">Calm Mode is on — only one thing is shown at a time.</div>
+      <small>YOUR NEXT SMALL STEP</small>
+      <div className="calm-step">{recommendation.actionText}</div>
+      <button className="primary" style={{ width: 'auto', padding: '14px 32px' }} onClick={() => go('tasks')}>Open my plan</button>
+      <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, calmMode: false })}>Turn off Calm Mode</button>
+    </div>;
+  }
+
   return <>
-    <div className="welcome"><div><small>GOOD MORNING</small><h1>How are things feeling?</h1></div><div className="avatar" aria-hidden="true">J</div></div>
+    <div className="welcome"><div><small>{timeOfDayGreeting().toUpperCase()}</small><h1>How are things feeling, {displayNameOrFallback(settings.displayName)}?</h1></div><div className="avatar" aria-hidden="true">{avatarInitial(settings.displayName)}</div></div>
     {!risk ? <button className="checkin-card" onClick={() => go('checkin')}><div><b>Take your daily check-in</b><span>Five gentle questions · about 1 minute</span></div><Sparkles /></button> : <RiskCard risk={risk} tasks={data.tasks} />}
     <button className="overwhelmed" onClick={() => go('overwhelmed')}><Heart /> I’m feeling overwhelmed</button>
     <div className="section-title"><h2>One small next step</h2><button onClick={() => go('tasks')}>View plan</button></div>
@@ -243,20 +278,34 @@ function FocusTask({ task, actionText, uid, setData }) {
 
 // --- Tasks ---------------------------------------------------------------
 
-function TaskForm({ initial, onCancel, onSave, saving }) {
+function TaskForm({ initial, tasks, onCancel, onSave, saving }) {
+  const [module, setModule] = useState(initial?.module || 'Dissertation');
+  const [addingModule, setAddingModule] = useState(false);
+  const [customModule, setCustomModule] = useState('');
+  const chips = availableModules(tasks);
+
   return <form className="panel" onSubmit={e => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    onSave({ title: f.get('title'), module: f.get('module'), due: f.get('due'), priority: f.get('priority') });
+    onSave({ title: f.get('title'), module, due: f.get('due'), priority: f.get('priority') });
   }}>
     <label>Task name<input name="title" defaultValue={initial?.title} required autoFocus /></label>
-    <label>Module<select name="module" defaultValue={initial?.module || 'Dissertation'}><option>Dissertation</option><option>Database Systems</option><option>Web Development</option><option>Other</option></select></label>
+    <div>
+      <div className="hint">Module</div>
+      <div className="module-chips">
+        {chips.filter(c => c !== 'Other').map(m => (
+          <button key={m} type="button" className={`module-chip ${module === m ? 'selected' : ''}`} onClick={() => { setModule(m); setAddingModule(false); }}>{m}</button>
+        ))}
+        <button type="button" className={`module-chip ${addingModule ? 'selected' : ''}`} onClick={() => setAddingModule(true)}>+ New module</button>
+      </div>
+      {addingModule && <input type="text" placeholder="Type a module name" value={customModule} onChange={e => { setCustomModule(e.target.value); setModule(e.target.value || 'Other'); }} style={{ marginTop: 8 }} />}
+    </div>
     <label>Due date<input name="due" type="date" defaultValue={initial?.due} /></label>
     <label>Priority<select name="priority" defaultValue={initial?.priority || 'normal'}>{priorities.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
     {!initial && <p className="hint">Nuvora will create a small first step automatically.</p>}
     <div className="row">
       <button type="button" onClick={onCancel} disabled={saving}>Cancel</button>
-      <button className="primary" disabled={saving}>{saving ? 'Saving…' : (initial ? 'Save changes' : 'Add task')}</button>
+      <button className="primary" disabled={saving || !module.trim()}>{saving ? 'Saving…' : (initial ? 'Save changes' : 'Add task')}</button>
     </div>
   </form>;
 }
@@ -352,13 +401,13 @@ function Tasks({ data, uid, setData }) {
   return <>
     <div className="page-title"><h1>My plan</h1><button className="icon filled" onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button></div>
     <div className="tabs">{['today', 'week', 'later'].map(t => <button className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t}</button>)}</div>
-    {adding && <TaskForm saving={saving} onCancel={() => setAdding(false)} onSave={create} />}
+    {adding && <TaskForm tasks={data.tasks} saving={saving} onCancel={() => setAdding(false)} onSave={create} />}
     <StatusMessage text={error} tone="error" />
     {undo && <div className="status-msg status" role="status">
       “{undo.title}” marked complete. <button className="link" onClick={undoComplete}>Undo</button>
     </div>}
     {filtered.map(t => t.id === editingId ? (
-      <TaskForm key={t.id} initial={t} saving={saving} onCancel={() => setEditingId(null)} onSave={fields => saveEdit(t.id, fields)} />
+      <TaskForm key={t.id} initial={t} tasks={data.tasks} saving={saving} onCancel={() => setEditingId(null)} onSave={fields => saveEdit(t.id, fields)} />
     ) : (
       <article className={`task row-task ${t.done ? 'done' : ''}`} key={t.id}>
         <button className="check" aria-label={t.done ? `Mark ${t.title} as not done` : `Mark ${t.title} as done`} disabled={busyIds.has(t.id)} onClick={() => toggle(t)}>
@@ -440,7 +489,7 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
   }
 
   if (incomplete) return <div className="result">
-    <Leaf /><h1>That’s okay.</h1>
+    <Mascot size={64} mood="neutral" /><h1>That’s okay.</h1>
     <p>We don’t have enough information from today’s answers to calculate a workload-pressure band. Your answers have been saved. Here’s one small step anyway.</p>
     <button className="primary" onClick={() => { resetDraft(); go('today'); }}>Back to Today</button>
   </div>;
@@ -547,7 +596,12 @@ function Support({ data }) {
 function SettingsPage({ value, busy, error, onChange }) {
   return <>
     <h1>Calm accessibility settings</h1>
-    <Setting label="Calm mode" text="Reduces visual density and uses softer contrast." checked={value.calmMode} disabled={busy} onChange={v => onChange({ ...value, calmMode: v })} />
+    <label className="setting" style={{ display: 'block' }}>
+      <b>What should Nuvora call you?</b>
+      <p>Optional — used only for a friendly greeting. Leave blank if you&rsquo;d rather not.</p>
+      <input type="text" defaultValue={value.displayName} disabled={busy} placeholder="e.g. Jhenifer" onBlur={e => onChange({ ...value, displayName: e.target.value })} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 8 }} />
+    </label>
+    <Setting label="Calm mode" text="Shows only one small step at a time on Today, and hides secondary detail elsewhere." checked={value.calmMode} disabled={busy} onChange={v => onChange({ ...value, calmMode: v })} />
     <Setting label="Reduced motion" text="Removes non-essential animation." checked={value.reducedMotion} disabled={busy} onChange={v => onChange({ ...value, reducedMotion: v })} />
     <h2>Text size</h2>
     <div className="tabs">{[[1, 'Standard'], [1.15, 'Medium'], [1.3, 'Large']].map(([v, l]) => <button key={v} disabled={busy} className={value.textScale === v ? 'active' : ''} onClick={() => onChange({ ...value, textScale: v })}>{l}</button>)}</div>
@@ -602,14 +656,14 @@ function Overwhelmed({ data, uid, setData, go }) {
   }
 
   if (done) return <div className="overwhelmed-page">
-    <Leaf /><small>OVERWHELMED MODE</small>
+    <Mascot size={80} mood="calm" /><small>OVERWHELMED MODE</small>
     <h1>One step down.</h1>
     <p>That is genuinely enough for right now.</p>
     <button className="primary" onClick={() => go('today')}>Back to Today</button>
   </div>;
 
   return <div className="overwhelmed-page">
-    <Leaf /><small>OVERWHELMED MODE</small>
+    <Mascot size={80} mood="worried" /><small>OVERWHELMED MODE</small>
     <h1>Let’s make everything smaller.</h1>
     <p>What is making this difficult right now?</p>
     <div className="scale-vertical" role="radiogroup" aria-label="What is making this difficult right now?">
