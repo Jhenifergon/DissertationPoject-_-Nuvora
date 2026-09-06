@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { BookOpen, Check, ChevronLeft, CircleHelp, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
+import { BookOpen, Check, ChevronLeft, CircleHelp, Download, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Shield, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth, firebaseEnabled } from '@/lib/firebase';
-import { addTask, completeCurrentStep, defaultSettings, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveReflection, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
+import { auth, deleteAccount, firebaseEnabled } from '@/lib/firebase';
+import { addTask, completeCurrentStep, defaultSettings, deleteAllData, deleteCheckinHistory, deleteCompletedTasks, exportAllData, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveReflection, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
 import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
 import { recommendAction } from '@/lib/recommendation';
 import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
@@ -150,6 +150,7 @@ export default function NuvoraApp() {
       <Drawer open={menu} onClose={() => setMenu(false)} triggerRef={menuButtonRef}>
         <Logo />
         <button onClick={() => go('settings')}><Settings /> Accessibility settings</button>
+        <button onClick={() => go('privacy')}><Shield /> Privacy &amp; data</button>
         <button onClick={() => (firebaseEnabled ? signOut(auth) : location.reload())}><LogOut /> Sign out</button>
         <p>Nuvora provides academic support, not medical advice or diagnosis.</p>
       </Drawer>
@@ -162,9 +163,10 @@ export default function NuvoraApp() {
         {screen === 'reflection' && <Reflection uid={user.uid} data={data} setData={setData} go={go} />}
         {screen === 'support' && <Support data={data} />}
         {screen === 'settings' && <SettingsPage value={settings} busy={settingsBusy} error={settingsError} onChange={updateSettings} />}
+        {screen === 'privacy' && <Privacy uid={user.uid} data={data} setData={setData} updateSettings={updateSettings} go={go} />}
         {screen === 'overwhelmed' && <Overwhelmed data={data} uid={user.uid} setData={setData} go={go} settings={settings} />}
       </div>
-      {!['checkin', 'overwhelmed', 'settings', 'reflection'].includes(screen) && <nav>{nav.map(([id, I, label]) => <button key={id} className={screen === id ? 'active' : ''} onClick={() => go(id)}><I /><span>{label}</span></button>)}</nav>}
+      {!['checkin', 'overwhelmed', 'settings', 'reflection', 'privacy'].includes(screen) && <nav>{nav.map(([id, I, label]) => <button key={id} className={screen === id ? 'active' : ''} onClick={() => go(id)}><I /><span>{label}</span></button>)}</nav>}
     </section>
   </main>;
 }
@@ -778,6 +780,164 @@ function Reflection({ uid, data, setData, go }) {
         {r.hard && <p><b>Would help:</b> {r.hard}</p>}
       </article>)}
     </>}
+  </>;
+}
+
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function Privacy({ uid, data, setData, updateSettings, go }) {
+  const [busy, setBusy] = useState(null);
+  const [status, setStatus] = useState({ text: '', tone: 'status' });
+  const [confirmAll, setConfirmAll] = useState('');
+  const [confirmAccount, setConfirmAccount] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [password, setPassword] = useState('');
+
+  function run(name, action, successText) {
+    if (busy) return;
+    setBusy(name);
+    setStatus({ text: '', tone: 'status' });
+    return action()
+      .then(() => setStatus({ text: successText, tone: 'status' }))
+      .catch(() => setStatus({ text: GENERIC_ERROR, tone: 'error' }))
+      .finally(() => setBusy(null));
+  }
+
+  async function handleExport() {
+    if (busy) return;
+    setBusy('export');
+    setStatus({ text: '', tone: 'status' });
+    try {
+      const exported = await exportAllData(uid);
+      downloadJson(exported, `nuvora-data-export-${new Date().toISOString().slice(0, 10)}.json`);
+      setStatus({ text: 'Your data has been downloaded as a JSON file.', tone: 'status' });
+    } catch {
+      setStatus({ text: GENERIC_ERROR, tone: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function handleDeleteCheckins() {
+    if (!window.confirm('Delete all check-in and reflection history? This cannot be undone.')) return;
+    run('checkins', async () => {
+      await deleteCheckinHistory(uid);
+      setData(d => ({ ...d, checkins: [], reflections: [] }));
+    }, 'Check-in and reflection history deleted.');
+  }
+
+  function handleDeleteCompleted() {
+    if (!window.confirm('Delete all completed tasks? This cannot be undone.')) return;
+    run('completed', async () => {
+      await deleteCompletedTasks(uid);
+      setData(d => ({ ...d, tasks: d.tasks.filter(t => !t.done) }));
+    }, 'Completed tasks deleted.');
+  }
+
+  function handleDeleteAll() {
+    if (confirmAll.trim().toUpperCase() !== 'DELETE') {
+      setStatus({ text: 'Type DELETE in the box to confirm.', tone: 'error' });
+      return;
+    }
+    if (!window.confirm('This permanently deletes everything Nuvora has stored for you — tasks, check-ins, reflections, and settings. Continue?')) return;
+    run('all', async () => {
+      await deleteAllData(uid);
+      setData(d => ({ ...d, tasks: [], checkins: [], reflections: [] }));
+      await updateSettings(defaultSettings);
+      setConfirmAll('');
+    }, 'All your Nuvora data has been deleted.');
+  }
+
+  async function handleDeleteAccount() {
+    if (confirmAccount.trim().toUpperCase() !== 'DELETE') {
+      setStatus({ text: 'Type DELETE in the box to confirm.', tone: 'error' });
+      return;
+    }
+    if (!window.confirm('This permanently deletes your account and all your data. This cannot be undone. Continue?')) return;
+    if (busy) return;
+    setBusy('account');
+    setStatus({ text: '', tone: 'status' });
+    try {
+      await deleteAllData(uid);
+      setData(d => ({ ...d, tasks: [], checkins: [], reflections: [] }));
+      await deleteAccount(needsPassword ? password : undefined);
+      // A successful deletion signs the student out; onAuthStateChanged
+      // (in the top-level component) picks that up and returns to Auth
+      // automatically — no manual navigation needed here.
+    } catch (err) {
+      if (err.code === 'auth/requires-recent-login') {
+        setNeedsPassword(true);
+        setStatus({ text: 'Your data has been deleted. Please re-enter your password to finish deleting your account.', tone: 'error' });
+      } else {
+        setStatus({ text: GENERIC_ERROR, tone: 'error' });
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return <>
+    <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
+    <div className="page-title"><h1>Privacy &amp; data</h1><Shield /></div>
+
+    <article className="panel">
+      <h2>What Nuvora stores</h2>
+      <p>Your tasks and their small steps, your daily check-in answers and the workload-pressure result calculated from them, any weekly reflections you write, your accessibility preferences, and a small count of how many steps you've completed and which support strategies you've used.</p>
+      <h2>Why</h2>
+      <p>Only to run the features you're using — recommending a next step, showing your check-in trends, and remembering your settings. Nothing is used for any other purpose.</p>
+      <h2>Where</h2>
+      <p>{firebaseEnabled ? 'In your account on Firebase (Google Cloud), accessible only to you — see the Firestore security rules for how that\u2019s enforced.' : 'Nowhere but this browser. Nuvora is running in local demo mode: everything is stored in this browser\u2019s local storage and never leaves this device. Clearing your browser data or using a different browser will lose it.'}</p>
+      <h2>Important</h2>
+      <p>The workload-pressure band is <b>not a diagnosis</b> of ADHD, autism, burnout, or any condition — it's a supportive, rule-based estimate from your own answers. Your data is <b>never automatically sent to tutors</b>, your university, or anyone else — the Support screen's "copy summary" only ever copies text to your own clipboard, for you to send yourself if you choose to.</p>
+    </article>
+
+    <article className="panel">
+      <h2>Export your data</h2>
+      <p>Download everything Nuvora has stored for you as a plain JSON file.</p>
+      <button className="primary" disabled={!!busy} onClick={handleExport}><Download /> {busy === 'export' ? 'Preparing…' : 'Download my data'}</button>
+    </article>
+
+    <article className="panel">
+      <h2>Delete check-in &amp; reflection history</h2>
+      <p>Removes every check-in and reflection. Your tasks and settings are left untouched.</p>
+      <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCheckins}><Trash2 /> {busy === 'checkins' ? 'Deleting…' : 'Delete check-in history'}</button>
+    </article>
+
+    <article className="panel">
+      <h2>Delete completed tasks</h2>
+      <p>Removes tasks you've marked complete. Tasks still open are left untouched.</p>
+      <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCompleted}><Trash2 /> {busy === 'completed' ? 'Deleting…' : 'Delete completed tasks'}</button>
+    </article>
+
+    <article className="panel">
+      <h2>Delete all my data</h2>
+      <p>Permanently removes everything — every task, check-in, reflection, and setting. Type <b>DELETE</b> below to confirm.</p>
+      <input type="text" value={confirmAll} disabled={busy === 'all'} onChange={e => setConfirmAll(e.target.value)} placeholder="Type DELETE to confirm" style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginBottom: 10 }} />
+      <button className="danger-btn" disabled={!!busy} onClick={handleDeleteAll}><Trash2 /> {busy === 'all' ? 'Deleting…' : 'Delete all my data'}</button>
+    </article>
+
+    {firebaseEnabled && <article className="panel">
+      <h2>Delete my account</h2>
+      <p>Permanently deletes all your data and your Nuvora account itself. Type <b>DELETE</b> below to confirm.</p>
+      <input type="text" value={confirmAccount} disabled={busy === 'account'} onChange={e => setConfirmAccount(e.target.value)} placeholder="Type DELETE to confirm" style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginBottom: 10 }} />
+      {needsPassword && <label style={{ display: 'block', marginBottom: 10 }}>
+        Re-enter your password to confirm
+        <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 6 }} />
+      </label>}
+      <button className="danger-btn" disabled={!!busy} onClick={handleDeleteAccount}><Trash2 /> {busy === 'account' ? 'Deleting…' : 'Delete my account'}</button>
+    </article>}
+
+    <StatusMessage text={status.text} tone={status.tone} />
   </>;
 }
 

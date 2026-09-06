@@ -25,3 +25,6 @@ button.check[aria-pressed="true"] .check-dot{background:var(--mint);color:white;
 .module-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .module-chip{border:0;border-radius:999px;padding:9px 13px;font-size:.78em;font-weight:700;background:var(--purple-soft);color:var(--ink)}
 .module-chip.selected{background:var(--purple);color:#fff}
+.danger-btn{border:0;border-radius:999px;padding:14px 18px;background:#8a2f43;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:44px}
+.danger-btn:disabled{opacity:.45}
+.danger-btn svg{width:17px}
