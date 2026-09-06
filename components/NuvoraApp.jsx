@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Check, ChevronLeft, CircleHelp, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, firebaseEnabled } from '@/lib/firebase';
-import { addTask, completeCurrentStep, defaultSettings, loadData, removeTask, saveCheckin, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
+import { addTask, completeCurrentStep, defaultSettings, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
 import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
 import { recommendAction } from '@/lib/recommendation';
 import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
@@ -157,7 +157,7 @@ export default function NuvoraApp() {
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn />}
-        {screen === 'progress' && <Progress data={data} />}
+        {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
         {screen === 'support' && <Support data={data} />}
         {screen === 'settings' && <SettingsPage value={settings} busy={settingsBusy} error={settingsError} onChange={updateSettings} />}
         {screen === 'overwhelmed' && <Overwhelmed data={data} uid={user.uid} setData={setData} go={go} />}
@@ -322,7 +322,7 @@ function FocusTask({ task, actionText, uid, setData }) {
     </div>}
 
     {mode === 'view' && !stepDone && <div className="row">
-      <button className="primary" disabled={busy} onClick={() => run(() => completeCurrentStep(uid, task.id, true), 'Saved. That step is done — the assignment stays open until you choose to complete it.')}>
+      <button className="primary" disabled={busy} onClick={() => run(async () => { const updated = await completeCurrentStep(uid, task.id, true); await recordStepCompleted(uid); return updated; }, 'Saved. That step is done — the assignment stays open until you choose to complete it.')}>
         <Check /> {busy ? 'Saving…' : 'Mark this step done'}
       </button>
       <button disabled={busy} onClick={() => { setDraftText(task.currentStep?.text || ''); setMode('editing'); }}><Pencil /> Edit</button>
@@ -615,23 +615,39 @@ function Learn() {
   </>;
 }
 
-function Progress({ data }) {
-  const completed = data.tasks.filter(t => t.done).length;
-  const scored = data.checkins.filter(c => c.risk);
-  const avg = scored.length ? Math.round(scored.reduce((a, c) => a + c.risk.score, 0) / scored.length) : 0;
+const STRATEGY_LABELS = { start: 'Getting started', big: 'Breaking a task down', energy: 'Low-energy attempts', reset: 'Short resets', support: 'Asking for help' };
+
+function Progress({ data, settings, updateSettings, settingsBusy }) {
+  const totalStrategyUses = Object.values(data.stats.strategyUses).reduce((a, b) => a + b, 0);
+  const usedStrategies = Object.entries(data.stats.strategyUses).filter(([, n]) => n > 0);
+
+  if (settings.hideProgress) {
+    return <>
+      <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
+      <Empty title="Progress is hidden" text="You've chosen not to see these details right now. That's completely fine." />
+      <button disabled={settingsBusy} onClick={() => updateSettings({ ...settings, hideProgress: false })}>Show progress again</button>
+    </>;
+  }
+
   return <>
     <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
+    <p>These numbers are just for your own reflection — there's no target to hit, and nothing here is shared with anyone.</p>
     <div className="stats">
-      <article><small>CHECK-INS</small><b>{data.checkins.length}</b></article>
-      <article><small>TASKS COMPLETED</small><b>{completed}</b></article>
-      <article><small>AVG PRESSURE</small><b>{avg || '—'}</b></article>
+      <article><small>CHECK-INS SO FAR</small><b>{data.checkins.length}</b></article>
+      <article><small>SMALL STEPS TAKEN</small><b>{data.stats.stepsCompleted}</b></article>
+      <article><small>STRATEGIES USED</small><b>{totalStrategyUses}</b></article>
     </div>
-    <h2>Recent check-ins</h2>
+    {usedStrategies.length > 0 && <div className="panel">
+      <h2>Helpful strategies</h2>
+      {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{n}</b></div>)}
+    </div>}
+    <h2>Recent pressure patterns</h2>
     {data.checkins.slice(0, 7).map((c, i) => <div className="trend" key={c.id || i}>
       <span>{new Date(c.createdAt?.seconds ? c.createdAt.seconds * 1000 : c.createdAt || Date.now()).toLocaleDateString()}</span>
       {c.risk ? <><div><i style={{ width: `${c.risk.score}%` }} /></div><b>{c.risk.score}</b></> : <span className="incomplete-tag">Incomplete</span>}
     </div>)}
     {!data.checkins.length && <Empty title="Your trends will appear here" text="Complete a check-in whenever it feels helpful." />}
+    <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, hideProgress: true })}>Hide these details</button>
   </>;
 }
 
@@ -715,6 +731,7 @@ function Overwhelmed({ data, uid, setData, go }) {
     try {
       const updated = await action();
       if (updated) setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
+      if (barrier) await recordStrategyUse(uid, barrier).catch(() => {});
       setDone(true);
     } catch {
       setError(GENERIC_ERROR);
@@ -723,10 +740,16 @@ function Overwhelmed({ data, uid, setData, go }) {
     }
   }
 
+  async function continueAfterReset() {
+    await recordStrategyUse(uid, 'reset').catch(() => {});
+    go('today');
+  }
+
   async function copySupportMessage() {
     setCopyStatus({ text: '', tone: 'status' });
     try {
       await navigator.clipboard.writeText(supportMessage);
+      await recordStrategyUse(uid, 'support').catch(() => {});
       setCopyStatus({ text: 'Copied. Nothing is sent automatically.', tone: 'status' });
     } catch {
       setCopyStatus({ text: "We couldn't copy that automatically — you can select and copy the text above.", tone: 'error' });
@@ -772,7 +795,7 @@ function Overwhelmed({ data, uid, setData, go }) {
     {barrier === 'reset' && <article><small>ONE BRIEF RESET</small>
       <h2>{activities[0][0]}</h2>
       <p>{activities[0][1]}</p>
-      <button className="primary" onClick={() => go('today')}>I’m ready to continue</button>
+      <button className="primary" onClick={continueAfterReset}>I’m ready to continue</button>
     </article>}
 
     {barrier === 'support' && <article><small>A MESSAGE YOU CONTROL</small>
