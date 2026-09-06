@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Check, ChevronLeft, CircleHelp, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, firebaseEnabled } from '@/lib/firebase';
@@ -31,6 +31,29 @@ const BARRIERS = [
 ];
 const GENERIC_ERROR = 'That did not save. Please try again in a moment.';
 
+// Gives custom role="radio" groups the arrow-key behaviour native radio
+// inputs get for free (WAI-ARIA radiogroup pattern): Left/Up selects the
+// previous option, Right/Down the next, Home/End jump to the ends, and
+// focus follows the newly selected option so keyboard users always know
+// where they are.
+function handleRadiogroupKeyDown(e, containerRef, values, current, onSelect) {
+  let idx = values.indexOf(current);
+  if (idx === -1) idx = 0;
+  let nextIdx;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIdx = (idx + 1) % values.length;
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') nextIdx = (idx - 1 + values.length) % values.length;
+  else if (e.key === 'Home') nextIdx = 0;
+  else if (e.key === 'End') nextIdx = values.length - 1;
+  else return;
+  e.preventDefault();
+  const nextValue = values[nextIdx];
+  onSelect(nextValue);
+  requestAnimationFrame(() => {
+    const match = Array.from(containerRef.current?.querySelectorAll('[data-value]') || []).find(el => el.dataset.value === String(nextValue));
+    match?.focus();
+  });
+}
+
 // A small accessible status/error message. Errors use role="alert" so
 // assistive technology announces them immediately; confirmations use the
 // gentler role="status" so they do not interrupt the user.
@@ -39,11 +62,49 @@ function StatusMessage({ text, tone = 'status' }) {
   return <p className={`status-msg ${tone}`} role={tone === 'error' ? 'alert' : 'status'} aria-live={tone === 'error' ? 'assertive' : 'polite'}>{text}</p>;
 }
 
+// An accessible drawer: moves focus in on open, returns it to the trigger
+// on close, traps Tab/Shift+Tab within itself, and closes on Escape or a
+// click on the backdrop — none of which the previous version did.
+function Drawer({ open, onClose, triggerRef, children }) {
+  const drawerRef = useRef(null);
+  const firstFocusableRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const triggerEl = triggerRef.current;
+    firstFocusableRef.current?.focus();
+    function onKeyDown(e) {
+      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key !== 'Tab' || !drawerRef.current) return;
+      const focusable = drawerRef.current.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      triggerEl?.focus();
+    };
+  }, [open, onClose, triggerRef]);
+
+  if (!open) return null;
+  return <>
+    <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
+    <div className="drawer" role="dialog" aria-modal="true" aria-label="Menu" ref={drawerRef}>
+      <button className="icon close" ref={firstFocusableRef} onClick={onClose} aria-label="Close menu"><X /></button>
+      {children}
+    </div>
+  </>;
+}
+
 export default function NuvoraApp() {
   const [user, setUser] = useState(firebaseEnabled ? undefined : { uid: 'demo', email: 'demo@nuvora.local' });
   const [screen, setScreen] = useState('today');
   const [data, setData] = useState(null);
   const [menu, setMenu] = useState(false);
+  const menuButtonRef = useRef(null);
   const [settings, setSettings] = useState(defaultSettings);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState('');
@@ -78,20 +139,19 @@ export default function NuvoraApp() {
   return <main className={`${settings.calmMode ? 'calm' : ''} ${settings.reducedMotion ? 'reduced' : ''}`} style={{ '--scale': settings.textScale }}>
     <section className="phone">
       <header>
-        <button className="icon" onClick={() => setMenu(true)} aria-label="Open menu"><Menu /></button>
+        <button className="icon" ref={menuButtonRef} onClick={() => setMenu(true)} aria-label="Open menu"><Menu /></button>
         <Logo />
         <button className="calm-toggle" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, calmMode: !settings.calmMode })}>
           <Leaf /> {settings.calmMode ? 'Calm on' : 'Calm'}
         </button>
       </header>
       {settingsError && <div className="content" style={{ padding: '0 22px' }}><StatusMessage text={settingsError} tone="error" /></div>}
-      {menu && <div className="drawer" role="dialog" aria-modal="true" aria-label="Menu">
-        <button className="icon close" onClick={() => setMenu(false)} aria-label="Close menu"><X /></button>
+      <Drawer open={menu} onClose={() => setMenu(false)} triggerRef={menuButtonRef}>
         <Logo />
         <button onClick={() => go('settings')}><Settings /> Accessibility settings</button>
         <button onClick={() => (firebaseEnabled ? signOut(auth) : location.reload())}><LogOut /> Sign out</button>
         <p>Nuvora provides academic support, not medical advice or diagnosis.</p>
-      </div>}
+      </Drawer>
       <div className="content">
         {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} />}
@@ -199,7 +259,7 @@ function RiskCard({ risk, tasks }) {
     <div className="score">{risk.score}</div>
     <div>
       <small>WORKLOAD PRESSURE · {risk.band.toUpperCase()}</small>
-      <h3>{risk.message}</h3>
+      <h2>{risk.message}</h2>
       <details>
         <summary>Why this result?</summary>
         <ul className="explanation-list">{explanation.map((line, i) => <li key={i}>{line}</li>)}</ul>
@@ -410,12 +470,12 @@ function Tasks({ data, uid, setData }) {
       <TaskForm key={t.id} initial={t} tasks={data.tasks} saving={saving} onCancel={() => setEditingId(null)} onSave={fields => saveEdit(t.id, fields)} />
     ) : (
       <article className={`task row-task ${t.done ? 'done' : ''}`} key={t.id}>
-        <button className="check" aria-label={t.done ? `Mark ${t.title} as not done` : `Mark ${t.title} as done`} disabled={busyIds.has(t.id)} onClick={() => toggle(t)}>
-          {t.done && <Check />}
+        <button className="check" aria-label={t.done ? `Mark ${t.title} as not done` : `Mark ${t.title} as done`} aria-pressed={t.done} disabled={busyIds.has(t.id)} onClick={() => toggle(t)}>
+          <span className="check-dot">{t.done && <Check />}</span>
         </button>
         <div>
           <small>{t.module} · {relativeDueLabel(t.due)}{t.priority === 'high' && ' · High priority'}</small>
-          <h3>{t.title}</h3>
+          <h2>{t.title}</h2>
           <p>{t.currentStep?.text}</p>
         </div>
         <button className="icon" aria-label={`Edit ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => setEditingId(t.id)}><Pencil /></button>
@@ -435,6 +495,16 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
   const [submitting, setSubmitting] = useState(false);
   const { step, answers } = draft;
   const q = questions[step];
+  const scaleRef = useRef(null);
+  const resultHeadingRef = useRef(null);
+
+  // Moves focus to the result heading when the check-in resolves to a
+  // result or an "insufficient information" screen — without this, a
+  // screen-reader user tabbing through an SPA view-change would have no
+  // cue that the content around them just changed entirely.
+  useEffect(() => {
+    if (incomplete || risk) resultHeadingRef.current?.focus();
+  }, [incomplete, risk]);
 
   function setAnswer(value) {
     setDraft(d => ({ ...d, answers: { ...d.answers, [q.id]: value } }));
@@ -489,7 +559,7 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
   }
 
   if (incomplete) return <div className="result">
-    <Mascot size={64} mood="neutral" /><h1>That’s okay.</h1>
+    <Mascot size={64} mood="neutral" /><h1 ref={resultHeadingRef} tabIndex={-1}>That’s okay.</h1>
     <p>We don’t have enough information from today’s answers to calculate a workload-pressure band. Your answers have been saved. Here’s one small step anyway.</p>
     <button className="primary" onClick={() => { resetDraft(); go('today'); }}>Back to Today</button>
   </div>;
@@ -499,7 +569,7 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
     <div className="result">
       <div className={`big-score ${risk.band.toLowerCase()}`}>{risk.score}</div>
       <small>{risk.band.toUpperCase()} WORKLOAD PRESSURE</small>
-      <h1>{risk.message}</h1>
+      <h1 ref={resultHeadingRef} tabIndex={-1}>{risk.message}</h1>
       <p>This result is not a diagnosis. It only helps Nuvora adjust today’s support.</p>
       <details><summary>Why this result?</summary><ul className="explanation-list">{explainPressure(risk, data.tasks).map((line, i) => <li key={i}>{line}</li>)}</ul></details>
       <button className="primary" onClick={() => { resetDraft(); go(risk.band === 'Higher' ? 'overwhelmed' : 'today'); }}>Choose my next step</button>
@@ -511,18 +581,20 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
       <button className="back" onClick={() => (step ? setDraft(d => ({ ...d, step: d.step - 1 })) : go('today'))}><ChevronLeft /> Back</button>
       <button className="link" onClick={() => go('today')}>Exit for now</button>
     </div>
-    <div className="progressbar" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={questions.length} aria-label={`Question ${step + 1} of ${questions.length}`}>
+    <div className="progressbar" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={questions.length} aria-valuetext={`Question ${step + 1} of ${questions.length}`} aria-label="Check-in progress">
       <span style={{ width: `${((step + 1) / questions.length) * 100}%` }} />
     </div>
     <small>QUESTION {step + 1} OF {questions.length}</small>
     <h1>{q.title}</h1>
-    <div className="scale" role="radiogroup" aria-label={q.title}>
-      {Array.from({ length: q.max }, (_, i) => i + 1).map(n => (
-        <button key={n} role="radio" aria-checked={answers[q.id] === n} onClick={() => setAnswer(n)} className={answers[q.id] === n ? 'selected' : ''}>{n}</button>
-      ))}
+    <div ref={scaleRef} role="radiogroup" aria-label={q.title} onKeyDown={e => handleRadiogroupKeyDown(e, scaleRef, [...Array.from({ length: q.max }, (_, i) => i + 1), 'unsure'], answers[q.id], setAnswer)}>
+      <div className="scale">
+        {Array.from({ length: q.max }, (_, i) => i + 1).map(n => (
+          <button key={n} role="radio" aria-checked={answers[q.id] === n} data-value={n} tabIndex={answers[q.id] === n || (answers[q.id] === undefined && n === 1) ? 0 : -1} onClick={() => setAnswer(n)} className={answers[q.id] === n ? 'selected' : ''}>{n}</button>
+        ))}
+      </div>
+      <div className="scale-label"><span>{q.low}</span><span>{q.high}</span></div>
+      <button role="radio" aria-checked={answers[q.id] === 'unsure'} data-value="unsure" tabIndex={answers[q.id] === 'unsure' ? 0 : -1} className={`option not-sure ${answers[q.id] === 'unsure' ? 'selected' : ''}`} onClick={() => setAnswer('unsure')}>Not sure / prefer not to answer</button>
     </div>
-    <div className="scale-label"><span>{q.low}</span><span>{q.high}</span></div>
-    <button role="radio" aria-checked={answers[q.id] === 'unsure'} className={`option not-sure ${answers[q.id] === 'unsure' ? 'selected' : ''}`} onClick={() => setAnswer('unsure')}>Not sure / prefer not to answer</button>
     <StatusMessage text={error} tone="error" />
     <button className="primary bottom" disabled={submitting} onClick={next}>{submitting ? 'Saving…' : 'Continue'}</button>
   </>;
@@ -536,7 +608,7 @@ function Learn() {
     <p>Short activities for difficult moments. Choose only what feels useful.</p>
     {activities.map(([title, text], i) => <article className="activity" key={title}>
       <div>{i + 1}</div>
-      <section><small>{i === 0 ? '2–3 MIN · RECOMMENDED' : '2–5 MIN'}</small><h3>{title}</h3><p>{text}</p>
+      <section><small>{i === 0 ? '2–3 MIN · RECOMMENDED' : '2–5 MIN'}</small><h2>{title}</h2><p>{text}</p>
         <details><summary>Start activity</summary><div className="activity-step">{text}<br /><br />Stopping after this is completely okay.</div></details>
       </section>
     </article>)}
@@ -623,6 +695,12 @@ function Overwhelmed({ data, uid, setData, go }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const task = data.tasks.find(t => !t.done);
+  const barrierRef = useRef(null);
+  const doneHeadingRef = useRef(null);
+
+  useEffect(() => {
+    if (done) doneHeadingRef.current?.focus();
+  }, [done]);
 
   useEffect(() => {
     if (barrier === 'support' && task) {
@@ -657,7 +735,7 @@ function Overwhelmed({ data, uid, setData, go }) {
 
   if (done) return <div className="overwhelmed-page">
     <Mascot size={80} mood="calm" /><small>OVERWHELMED MODE</small>
-    <h1>One step down.</h1>
+    <h1 ref={doneHeadingRef} tabIndex={-1}>One step down.</h1>
     <p>That is genuinely enough for right now.</p>
     <button className="primary" onClick={() => go('today')}>Back to Today</button>
   </div>;
@@ -666,9 +744,9 @@ function Overwhelmed({ data, uid, setData, go }) {
     <Mascot size={80} mood="worried" /><small>OVERWHELMED MODE</small>
     <h1>Let’s make everything smaller.</h1>
     <p>What is making this difficult right now?</p>
-    <div className="scale-vertical" role="radiogroup" aria-label="What is making this difficult right now?">
-      {BARRIERS.map(b => (
-        <button key={b.id} role="radio" aria-checked={barrier === b.id} className={`option ${barrier === b.id ? 'selected' : ''}`} onClick={() => { setBarrier(b.id); setChosenAlt(null); }}>{b.label}</button>
+    <div ref={barrierRef} className="scale-vertical" role="radiogroup" aria-label="What is making this difficult right now?" onKeyDown={e => handleRadiogroupKeyDown(e, barrierRef, BARRIERS.map(b => b.id), barrier, id => { setBarrier(id); setChosenAlt(null); })}>
+      {BARRIERS.map((b, i) => (
+        <button key={b.id} role="radio" aria-checked={barrier === b.id} data-value={b.id} tabIndex={barrier === b.id || (barrier === null && i === 0) ? 0 : -1} className={`option ${barrier === b.id ? 'selected' : ''}`} onClick={() => { setBarrier(b.id); setChosenAlt(null); }}>{b.label}</button>
       ))}
     </div>
 
@@ -715,4 +793,4 @@ function MiniTask({ task }) {
     <div><b>{task.title}</b><small>{relativeDueLabel(task.due)} · {task.currentStep?.text}</small></div>
   </div>;
 }
-function Empty({ title, text }) { return <div className="empty"><Leaf /><h3>{title}</h3><p>{text}</p></div>; }
+function Empty({ title, text }) { return <div className="empty"><Leaf /><h2>{title}</h2><p>{text}</p></div>; }
