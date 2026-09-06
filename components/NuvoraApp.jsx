@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Check, ChevronLeft, CircleHelp, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, firebaseEnabled } from '@/lib/firebase';
-import { addTask, completeCurrentStep, defaultSettings, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
+import { addTask, completeCurrentStep, defaultSettings, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveReflection, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
 import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
 import { recommendAction } from '@/lib/recommendation';
 import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
@@ -11,6 +11,7 @@ import { explainPressure } from '@/lib/explain';
 import { combineWorkloadPressure } from '@/lib/pressure';
 import { avatarInitial, displayNameOrFallback, timeOfDayGreeting } from '@/lib/greeting';
 import { availableModules } from '@/lib/modules';
+import { formatSeconds } from '@/lib/timer';
 
 const questions = [
   { id: 'mood', title: 'How is your workload feeling today?', max: 4, low: 'Calm', high: 'Very overwhelming' },
@@ -157,12 +158,13 @@ export default function NuvoraApp() {
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn />}
-        {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
+        {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} go={go} />}
+        {screen === 'reflection' && <Reflection uid={user.uid} data={data} setData={setData} go={go} />}
         {screen === 'support' && <Support data={data} />}
         {screen === 'settings' && <SettingsPage value={settings} busy={settingsBusy} error={settingsError} onChange={updateSettings} />}
-        {screen === 'overwhelmed' && <Overwhelmed data={data} uid={user.uid} setData={setData} go={go} />}
+        {screen === 'overwhelmed' && <Overwhelmed data={data} uid={user.uid} setData={setData} go={go} settings={settings} />}
       </div>
-      {!['checkin', 'overwhelmed', 'settings'].includes(screen) && <nav>{nav.map(([id, I, label]) => <button key={id} className={screen === id ? 'active' : ''} onClick={() => go(id)}><I /><span>{label}</span></button>)}</nav>}
+      {!['checkin', 'overwhelmed', 'settings', 'reflection'].includes(screen) && <nav>{nav.map(([id, I, label]) => <button key={id} className={screen === id ? 'active' : ''} onClick={() => go(id)}><I /><span>{label}</span></button>)}</nav>}
     </section>
   </main>;
 }
@@ -602,6 +604,69 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
 
 // --- Learn / Progress / Support / Settings ---------------------------------
 
+// A real, working countdown timer — Overwhelmed Mode's "low energy" path
+// and Learn's "two-minute task starter" both used to just describe a timer
+// in text without actually having one. The optional tone is a plain
+// generated sine wave (Web Audio API) at low volume, started only by an
+// explicit tap — never bundled audio, never autoplay, matching the "no
+// background music, nothing plays itself" rule.
+function FocusTimer({ seconds = 120 }) {
+  const [remaining, setRemaining] = useState(seconds);
+  const [running, setRunning] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const [toneOn, setToneOn] = useState(false);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(() => {
+      setRemaining(r => {
+        if (r <= 1) {
+          setRunning(false);
+          setFinished(true);
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  function stopTone() {
+    if (!audioRef.current) return;
+    try { audioRef.current.oscillator.stop(); audioRef.current.ctx.close(); } catch { /* already stopped */ }
+    audioRef.current = null;
+  }
+  useEffect(() => stopTone, []);
+
+  function toggleTone() {
+    if (toneOn) { stopTone(); setToneOn(false); return; }
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 220;
+      gain.gain.value = 0.03;
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      audioRef.current = { ctx, oscillator, gain };
+      setToneOn(true);
+    } catch { /* Web Audio unavailable — the timer itself still works fine */ }
+  }
+
+  return <div className="focus-timer">
+    <div className="timer-display" role="status" aria-live="polite">{finished ? 'Time’s up — well done.' : formatSeconds(remaining)}</div>
+    <div className="row">
+      {!running && <button className="primary" onClick={() => { setFinished(false); setRunning(true); }}>{remaining === seconds ? 'Start' : 'Resume'}</button>}
+      {running && <button onClick={() => setRunning(false)}>Pause</button>}
+      <button onClick={() => { setRunning(false); setFinished(false); setRemaining(seconds); }} disabled={remaining === seconds && !running}>Reset</button>
+    </div>
+    <button className="link" onClick={toggleTone}>{toneOn ? 'Turn off soft tone' : 'Play a soft tone (optional)'}</button>
+  </div>;
+}
+
 function Learn() {
   return <>
     <div className="page-title"><h1>Small resets</h1><Leaf /></div>
@@ -609,15 +674,23 @@ function Learn() {
     {activities.map(([title, text], i) => <article className="activity" key={title}>
       <div>{i + 1}</div>
       <section><small>{i === 0 ? '2–3 MIN · RECOMMENDED' : '2–5 MIN'}</small><h2>{title}</h2><p>{text}</p>
-        <details><summary>Start activity</summary><div className="activity-step">{text}<br /><br />Stopping after this is completely okay.</div></details>
+        <details><summary>Start activity</summary><div className="activity-step">{text}<br /><br />Stopping after this is completely okay.
+          {title === 'Two-minute task starter' && <FocusTimer seconds={120} />}
+        </div></details>
       </section>
     </article>)}
+    <article className="panel">
+      <h2>Reset Space</h2>
+      <p>For a guided breathing exercise or a longer break, the NHS's Every Mind Matters has free, evidence-based resources.</p>
+      <a className="option" href="https://www.nhs.uk/every-mind-matters/" target="_blank" rel="noopener noreferrer">Open Every Mind Matters (opens in a new tab, leaves Nuvora) ↗</a>
+      <p className="hint">This is an external NHS website, not part of Nuvora. It is not a replacement for professional support.</p>
+    </article>
   </>;
 }
 
 const STRATEGY_LABELS = { start: 'Getting started', big: 'Breaking a task down', energy: 'Low-energy attempts', reset: 'Short resets', support: 'Asking for help' };
 
-function Progress({ data, settings, updateSettings, settingsBusy }) {
+function Progress({ data, settings, updateSettings, settingsBusy, go }) {
   const totalStrategyUses = Object.values(data.stats.strategyUses).reduce((a, b) => a + b, 0);
   const usedStrategies = Object.entries(data.stats.strategyUses).filter(([, n]) => n > 0);
 
@@ -647,7 +720,64 @@ function Progress({ data, settings, updateSettings, settingsBusy }) {
       {c.risk ? <><div><i style={{ width: `${c.risk.score}%` }} /></div><b>{c.risk.score}</b></> : <span className="incomplete-tag">Incomplete</span>}
     </div>)}
     {!data.checkins.length && <Empty title="Your trends will appear here" text="Complete a check-in whenever it feels helpful." />}
+    <button className="overwhelmed" onClick={() => go('reflection')}>Weekly reflection</button>
     <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, hideProgress: true })}>Hide these details</button>
+  </>;
+}
+
+const REFLECTION_PROMPTS = [
+  { id: 'manageable', label: 'What felt manageable this week?' },
+  { id: 'hard', label: 'What would help make next week a little easier?' },
+];
+
+// A short, free-text reflection entirely in the student's own words —
+// never generated, summarised, or scored by Nuvora. Saved so past entries
+// can be looked back on, but there is no "streak" of doing this regularly.
+function Reflection({ uid, data, setData, go }) {
+  const [answers, setAnswers] = useState({ manageable: '', hard: '' });
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState({ text: '', tone: 'status' });
+
+  async function save() {
+    if (saving) return;
+    if (!answers.manageable.trim() && !answers.hard.trim()) {
+      setStatus({ text: 'Write as much or as little as feels useful — at least one answer helps.', tone: 'error' });
+      return;
+    }
+    setSaving(true);
+    setStatus({ text: '', tone: 'status' });
+    try {
+      await saveReflection(uid, answers);
+      setData(d => ({ ...d, reflections: [{ ...answers, createdAt: new Date().toISOString() }, ...d.reflections] }));
+      setAnswers({ manageable: '', hard: '' });
+      setStatus({ text: 'Saved. Thank you for taking a moment for this.', tone: 'status' });
+    } catch {
+      setStatus({ text: GENERIC_ERROR, tone: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <>
+    <button className="back" onClick={() => go('progress')}><ChevronLeft /> Progress</button>
+    <h1>Weekly reflection</h1>
+    <p>A couple of optional questions, entirely in your own words. Nothing here is scored or shared.</p>
+    {REFLECTION_PROMPTS.map(p => (
+      <label key={p.id} style={{ display: 'block', margin: '14px 0' }}>
+        <b>{p.label}</b>
+        <textarea rows={3} value={answers[p.id]} disabled={saving} onChange={e => setAnswers(a => ({ ...a, [p.id]: e.target.value }))} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 8, fontFamily: 'inherit' }} />
+      </label>
+    ))}
+    <StatusMessage text={status.text} tone={status.tone} />
+    <button className="primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save reflection'}</button>
+    {data.reflections.length > 0 && <>
+      <h2>Past reflections</h2>
+      {data.reflections.slice(0, 5).map((r, i) => <article className="panel" key={r.id || i}>
+        <small>{new Date(r.createdAt?.seconds ? r.createdAt.seconds * 1000 : r.createdAt || Date.now()).toLocaleDateString()}</small>
+        {r.manageable && <p><b>Manageable:</b> {r.manageable}</p>}
+        {r.hard && <p><b>Would help:</b> {r.hard}</p>}
+      </article>)}
+    </>}
   </>;
 }
 
@@ -693,6 +823,16 @@ function SettingsPage({ value, busy, error, onChange }) {
     <Setting label="Reduced motion" text="Removes non-essential animation." checked={value.reducedMotion} disabled={busy} onChange={v => onChange({ ...value, reducedMotion: v })} />
     <h2>Text size</h2>
     <div className="tabs">{[[1, 'Standard'], [1.15, 'Medium'], [1.3, 'Large']].map(([v, l]) => <button key={v} disabled={busy} className={value.textScale === v ? 'active' : ''} onClick={() => onChange({ ...value, textScale: v })}>{l}</button>)}</div>
+    <h2>Support person</h2>
+    <p>Optional — just a personal note for yourself. Nuvora never contacts anyone automatically.</p>
+    <label className="setting" style={{ display: 'block' }}>
+      <b>Name</b>
+      <input type="text" defaultValue={value.supportPersonName} disabled={busy} placeholder="e.g. Course tutor, a friend" onBlur={e => onChange({ ...value, supportPersonName: e.target.value })} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 8 }} />
+    </label>
+    <label className="setting" style={{ display: 'block' }}>
+      <b>Note (optional)</b>
+      <input type="text" defaultValue={value.supportPersonNote} disabled={busy} placeholder="e.g. Best reached by email" onBlur={e => onChange({ ...value, supportPersonNote: e.target.value })} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 8 }} />
+    </label>
     <StatusMessage text={error} tone="error" />
   </>;
 }
@@ -702,7 +842,7 @@ function Setting({ label, text, checked, disabled, onChange }) {
 
 // --- Overwhelmed Mode (barrier-based) ---------------------------------------
 
-function Overwhelmed({ data, uid, setData, go }) {
+function Overwhelmed({ data, uid, setData, go, settings }) {
   const [barrier, setBarrier] = useState(null);
   const [done, setDone] = useState(false);
   const [chosenAlt, setChosenAlt] = useState(null);
@@ -720,9 +860,9 @@ function Overwhelmed({ data, uid, setData, go }) {
 
   useEffect(() => {
     if (barrier === 'support' && task) {
-      setSupportMessage(`Hi — I'm finding "${task.title}" difficult to manage right now and could use a hand. Could we talk it through?`);
+      setSupportMessage(`Hi${settings?.supportPersonName ? ` ${settings.supportPersonName}` : ''} — I'm finding "${task.title}" difficult to manage right now and could use a hand. Could we talk it through?`);
     }
-  }, [barrier, task]);
+  }, [barrier, task, settings]);
 
   async function markDone(action) {
     if (busy || !task) { setDone(true); return; }
@@ -788,7 +928,8 @@ function Overwhelmed({ data, uid, setData, go }) {
     </article>}
 
     {barrier === 'energy' && <article><small>JUST TWO MINUTES</small>
-      <h2>Set a two-minute timer. You have permission to stop after that.</h2>
+      <h2>You have permission to stop the moment this ends.</h2>
+      <FocusTimer seconds={120} />
       <button className="primary" disabled={busy} onClick={() => markDone(() => task && completeCurrentStep(uid, task.id, true))}>{busy ? 'Saving…' : 'I tried for two minutes'}</button>
     </article>}
 
@@ -802,6 +943,7 @@ function Overwhelmed({ data, uid, setData, go }) {
       <label>Edit before sending it yourself<textarea value={supportMessage} onChange={e => setSupportMessage(e.target.value)} rows={3} /></label>
       <button className="primary" onClick={copySupportMessage}>Copy message</button>
       <StatusMessage text={copyStatus.text} tone={copyStatus.tone} />
+      {!settings?.supportPersonName && <p className="hint">Tip: set a support person's name in Settings and this will greet them automatically.</p>}
     </article>}
 
     <StatusMessage text={error} tone="error" />
