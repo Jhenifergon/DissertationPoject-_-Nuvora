@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Check, ChevronLeft, CircleHelp, Download, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Shield, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
-import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth, deleteAccount, firebaseEnabled } from '@/lib/firebase';
+import { createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth, deleteAccount, firebaseEnabled, reauthenticate } from '@/lib/firebase';
+import { authErrorMessage } from '@/lib/authErrors';
 import { addTask, completeCurrentStep, defaultSettings, deleteAllData, deleteCheckinHistory, deleteCompletedTasks, exportAllData, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveReflection, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
 import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
 import { recommendAction } from '@/lib/recommendation';
@@ -115,10 +116,42 @@ export default function NuvoraApp() {
   const [checkinDraft, setCheckinDraft] = useState({ step: 0, answers: {} });
 
   useEffect(() => (firebaseEnabled ? onAuthStateChanged(auth, setUser) : undefined), []);
-  useEffect(() => { if (user) loadData(user.uid).then(d => { setData(d); setSettings(d.settings); }); }, [user]);
+
+  // Loading Firestore data can fail (permissions, network, a dropped
+  // connection) — this used to have no failure path at all, so a failed
+  // load left `data` as null forever and the student was stuck on the
+  // splash screen indefinitely with no way to know anything had gone
+  // wrong or any way to recover. Now failure is its own explicit state
+  // with a way back in, and retrying never touches anything already
+  // saved (loadData only reads).
+  const [loadStatus, setLoadStatus] = useState('idle'); // idle | loading | success | error
+  const [retryTick, setRetryTick] = useState(0);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let cancelled = false;
+    setLoadStatus('loading');
+    loadData(user.uid)
+      .then(d => {
+        if (cancelled) return;
+        setData(d);
+        setSettings(d.settings);
+        setLoadStatus('success');
+      })
+      .catch(() => {
+        if (!cancelled) setLoadStatus('error');
+      });
+    return () => { cancelled = true; };
+  }, [user, retryTick]);
 
   if (user === undefined) return <Splash />;
   if (!user) return <Auth />;
+  if (loadStatus === 'error') {
+    return <LoadError
+      onRetry={() => setRetryTick(t => t + 1)}
+      onSignOut={() => (firebaseEnabled ? signOut(auth) : location.reload())}
+    />;
+  }
   if (!data) return <Splash />;
 
   const go = s => { setScreen(s); setMenu(false); };
@@ -191,9 +224,28 @@ function Mascot({ size = 64, mood = 'calm' }) {
 function Logo() { return <div className="logo"><Mascot size={26} /> Nuvora</div>; }
 function Splash() { return <main><section className="phone splash"><Mascot size={110} /><Logo /><p>A calmer way to move forward.</p></section></main>; }
 
+// Shown when loading the student's data fails outright (not merely slow).
+// Calm, specific, and — importantly — honest that nothing has been lost,
+// since a failed *read* never touches anything already saved.
+function LoadError({ onRetry, onSignOut }) {
+  const headingRef = useRef(null);
+  useEffect(() => { headingRef.current?.focus(); }, []);
+  return <main><section className="phone splash">
+    <Mascot size={90} mood="neutral" />
+    <h1 ref={headingRef} tabIndex={-1} style={{ textAlign: 'center' }}>We couldn’t load your study space.</h1>
+    <p>Your data hasn’t been changed.</p>
+    <button className="primary" onClick={onRetry}>Try again</button>
+    <button className="link" onClick={onSignOut}>Sign out</button>
+  </section></main>;
+}
+
 function Auth() {
-  const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [password, setPassword] = useState('');
+  const [mode, setMode] = useState('login'); // login | signup | reset
+  const [email, setEmail] = useState(''), [password, setPassword] = useState('');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetStatus, setResetStatus] = useState({ text: '', tone: 'status' });
+
   async function submit(e) {
     e.preventDefault();
     if (busy) return;
@@ -201,12 +253,51 @@ function Auth() {
     setError('');
     try {
       mode === 'login' ? await signInWithEmailAndPassword(auth, email, password) : await createUserWithEmailAndPassword(auth, email, password);
-    } catch {
-      setError('Please check your email and password.');
+    } catch (err) {
+      setError(authErrorMessage(err));
     } finally {
       setBusy(false);
     }
   }
+
+  // Deliberately shows the same calm message whether or not an account
+  // exists for the entered email — Firebase's own reset flow can be used
+  // to probe which emails are registered otherwise, and there's no reason
+  // to hand that information out.
+  async function submitReset(e) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setResetStatus({ text: '', tone: 'status' });
+    const REASSURING_MESSAGE = 'If an account exists for this email, password-reset instructions have been sent.';
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetStatus({ text: REASSURING_MESSAGE, tone: 'status' });
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') {
+        setResetStatus({ text: REASSURING_MESSAGE, tone: 'status' });
+      } else {
+        setResetStatus({ text: authErrorMessage(err), tone: 'error' });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (mode === 'reset') {
+    return <main><section className="phone auth">
+      <Logo />
+      <h1>Reset your password</h1>
+      <p>Enter the email you signed up with, and we’ll send instructions if an account exists for it.</p>
+      <form onSubmit={submitReset}>
+        <label>Email<input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required /></label>
+        <StatusMessage text={resetStatus.text} tone={resetStatus.tone} />
+        <button className="primary" disabled={busy}>{busy ? 'Sending…' : 'Send reset email'}</button>
+      </form>
+      <button className="link" onClick={() => setMode('login')}>Back to log in</button>
+    </section></main>;
+  }
+
   return <main><section className="phone auth">
     <Logo />
     <h1>Welcome to your calm study space</h1>
@@ -218,6 +309,7 @@ function Auth() {
     <form onSubmit={submit}>
       <label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
       <label>Password<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
+      {mode === 'login' && <button type="button" className="link" style={{ padding: 0, marginTop: -8 }} onClick={() => { setResetEmail(email); setMode('reset'); }}>Forgot password?</button>}
       <StatusMessage text={error} tone="error" />
       <button className="primary" disabled={busy}>{busy ? 'Please wait…' : (mode === 'login' ? 'Log in' : 'Create account')}</button>
     </form>
@@ -800,7 +892,6 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
   const [status, setStatus] = useState({ text: '', tone: 'status' });
   const [confirmAll, setConfirmAll] = useState('');
   const [confirmAccount, setConfirmAccount] = useState('');
-  const [needsPassword, setNeedsPassword] = useState(false);
   const [password, setPassword] = useState('');
 
   function run(name, action, successText) {
@@ -863,24 +954,31 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
       setStatus({ text: 'Type DELETE in the box to confirm.', tone: 'error' });
       return;
     }
+    if (!password) {
+      setStatus({ text: 'Enter your password to confirm.', tone: 'error' });
+      return;
+    }
     if (!window.confirm('This permanently deletes your account and all your data. This cannot be undone. Continue?')) return;
     if (busy) return;
     setBusy('account');
     setStatus({ text: '', tone: 'status' });
     try {
+      // Reauthenticate first, unconditionally, before anything destructive
+      // happens. This is the fix for the previous ordering, which deleted
+      // Firestore data before finding out whether the account deletion
+      // itself could even proceed — a student whose session had gone stale
+      // could end up with their data gone but the account still there. If
+      // this step fails (wrong password, expired session), nothing has
+      // been touched yet.
+      await reauthenticate(password);
       await deleteAllData(uid);
       setData(d => ({ ...d, tasks: [], checkins: [], reflections: [] }));
-      await deleteAccount(needsPassword ? password : undefined);
+      await deleteAccount();
       // A successful deletion signs the student out; onAuthStateChanged
       // (in the top-level component) picks that up and returns to Auth
       // automatically — no manual navigation needed here.
     } catch (err) {
-      if (err.code === 'auth/requires-recent-login') {
-        setNeedsPassword(true);
-        setStatus({ text: 'Your data has been deleted. Please re-enter your password to finish deleting your account.', tone: 'error' });
-      } else {
-        setStatus({ text: GENERIC_ERROR, tone: 'error' });
-      }
+      setStatus({ text: authErrorMessage(err), tone: 'error' });
     } finally {
       setBusy(null);
     }
@@ -928,12 +1026,12 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
 
     {firebaseEnabled && <article className="panel">
       <h2>Delete my account</h2>
-      <p>Permanently deletes all your data and your Nuvora account itself. Type <b>DELETE</b> below to confirm.</p>
+      <p>Permanently deletes all your data and your Nuvora account itself. Type <b>DELETE</b> and confirm your password below.</p>
       <input type="text" value={confirmAccount} disabled={busy === 'account'} onChange={e => setConfirmAccount(e.target.value)} placeholder="Type DELETE to confirm" style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginBottom: 10 }} />
-      {needsPassword && <label style={{ display: 'block', marginBottom: 10 }}>
-        Re-enter your password to confirm
-        <input type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 6 }} />
-      </label>}
+      <label style={{ display: 'block', marginBottom: 10 }}>
+        Confirm your password
+        <input type="password" value={password} disabled={busy === 'account'} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 6 }} />
+      </label>
       <button className="danger-btn" disabled={!!busy} onClick={handleDeleteAccount}><Trash2 /> {busy === 'account' ? 'Deleting…' : 'Delete my account'}</button>
     </article>}
 
