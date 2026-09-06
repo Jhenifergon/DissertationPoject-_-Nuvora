@@ -26,7 +26,11 @@ function describeViolations(violations) {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  // Seed an explicit blank state rather than relying on localStorage.clear()
+  // (which now falls back to the richer demo seed added for a more
+  // realistic first look at the app) — these tests need a controlled,
+  // predictable starting point independent of that sample content.
+  localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({ tasks: [], checkins: [], reflections: [], settings: {}, stats: {} }));
 });
 
 afterEach(() => {

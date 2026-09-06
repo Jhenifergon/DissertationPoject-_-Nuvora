@@ -22,7 +22,12 @@ function mockFetch() {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  // Seed an explicit blank state rather than relying on localStorage.clear()
+  // (which now falls back to the richer demo seed added for a more
+  // realistic first look at the app) — these journeys specifically test a
+  // genuine first-time flow (e.g. completing a check-in with none yet
+  // saved), which needs a controlled, predictable starting point.
+  localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({ tasks: [], checkins: [], reflections: [], settings: {}, stats: {} }));
   mockFetch();
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
@@ -102,13 +107,13 @@ describe('end-to-end journeys', () => {
     await screen.findByText('One step down.');
     fireEvent.click(screen.getByRole('button', { name: 'Back to Today' }));
 
-    // 8. Confirm that the full assignment remains open (Overwhelmed Mode
-    // always acts on the first not-done task, which is the seeded
-    // "Draft literature notes" task, deterministically)
+    // 8. Confirm that the full assignment remains open (with a blank
+    // starting state, "Journey test assignment" — added in step 2 — is
+    // the only task, so Overwhelmed Mode deterministically acts on it)
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
-    const taskRow = (await screen.findByText('Draft literature notes')).closest('article');
-    expect(within(taskRow).getByRole('button', { name: 'Mark Draft literature notes as done' })).toBeInTheDocument();
+    const taskRow = (await screen.findByText('Journey test assignment')).closest('article');
+    expect(within(taskRow).getByRole('button', { name: 'Mark Journey test assignment as done' })).toBeInTheDocument();
   });
 
   it('journey 9: reload and confirm persistence', async () => {
@@ -150,6 +155,5 @@ describe('end-to-end journeys', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
     await screen.findByText('My plan');
     expect(screen.queryByText('To be deleted')).not.toBeInTheDocument();
-    expect(screen.queryByText('Draft literature notes')).not.toBeInTheDocument();
   });
 });

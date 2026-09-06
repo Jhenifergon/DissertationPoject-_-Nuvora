@@ -3,7 +3,11 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import NuvoraApp from './NuvoraApp';
 
 beforeEach(() => {
-  localStorage.clear();
+  // Seed an explicit blank state rather than relying on localStorage.clear()
+  // (which now falls back to the richer demo seed added for a more
+  // realistic first look at the app) — tests that need "no check-in yet"
+  // depend on this being genuinely empty, not just absent from storage.
+  localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({ tasks: [], checkins: [], reflections: [], settings: {}, stats: {} }));
 });
 
 afterEach(() => {
