@@ -21,7 +21,12 @@ const questions = [
   { id: 'initiation', title: 'How easy is it to start tasks today?', max: 5, low: 'Hard to start', high: 'Easy to start' },
   { id: 'confidence', title: 'How confident do you feel about this week?', max: 5, low: 'Not confident', high: 'Confident' },
 ];
-const activities = [['Reframe overwhelm', 'Pick one task. Name only its first physical action.'], ['Two-minute task starter', 'Work for two minutes, with permission to stop.'], ['Sort your brain dump', 'List everything, then circle only what is due in 48 hours.']];
+const activities = [
+  ['The 2-minute start', "Don't finish the task. Open it and identify only the first action."],
+  ['Shrink the assignment', 'Turn "Write introduction" into "Write one sentence explaining the topic."'],
+  ['Low-energy version', "Choose the smallest useful version of today's task."],
+  ['Restart after getting stuck', '1. Reopen the work. 2. Find your last completed point. 3. Choose one next action.'],
+];
 const nav = [['today', Home, 'Today'], ['tasks', ListTodo, 'Tasks'], ['learn', BookOpen, 'Learn'], ['progress', TrendingUp, 'Progress'], ['support', Heart, 'Support']];
 const priorities = [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']];
 const BARRIERS = [
@@ -115,6 +120,22 @@ export default function NuvoraApp() {
   // within the same session does not lose what was already answered.
   const [checkinDraft, setCheckinDraft] = useState({ step: 0, answers: {} });
 
+  // A subtle offline notice — Firebase writes queue locally and sync once
+  // back online, but the student should know why things might feel slower
+  // rather than wondering if something's broken.
+  const [isOnline, setIsOnline] = useState(typeof navigator === 'undefined' || navigator.onLine !== false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
   useEffect(() => (firebaseEnabled ? onAuthStateChanged(auth, setUser) : undefined), []);
 
   // Loading Firestore data can fail (permissions, network, a dropped
@@ -144,8 +165,16 @@ export default function NuvoraApp() {
     return () => { cancelled = true; };
   }, [user, retryTick]);
 
+  const ONBOARDING_KEY = 'nuvora-onboarding-seen';
+  const [onboardingDone, setOnboardingDone] = useState(() => typeof window !== 'undefined' && localStorage.getItem(ONBOARDING_KEY) === '1');
+
   if (user === undefined) return <Splash />;
-  if (!user) return <Auth />;
+  if (!user) {
+    if (firebaseEnabled && !onboardingDone) {
+      return <Onboarding onDone={() => { localStorage.setItem(ONBOARDING_KEY, '1'); setOnboardingDone(true); }} />;
+    }
+    return <Auth />;
+  }
   if (loadStatus === 'error') {
     return <LoadError
       onRetry={() => setRetryTick(t => t + 1)}
@@ -180,6 +209,7 @@ export default function NuvoraApp() {
         </button>
       </header>
       {settingsError && <div className="content" style={{ padding: '0 22px' }}><StatusMessage text={settingsError} tone="error" /></div>}
+      {!isOnline && <div className="content" style={{ padding: '0 22px' }}><p className="status-msg status" role="status">You’re offline. Some changes may take a little longer to sync.</p></div>}
       <Drawer open={menu} onClose={() => setMenu(false)} triggerRef={menuButtonRef}>
         <Logo />
         <button onClick={() => go('settings')}><Settings /> Accessibility settings</button>
@@ -239,9 +269,35 @@ function LoadError({ onRetry, onSignOut }) {
   </section></main>;
 }
 
+const ONBOARDING_SCREENS = [
+  { title: 'Move forward without pressure', text: 'Nuvora helps turn academic overload into one manageable next step.' },
+  { title: 'Support, not diagnosis', text: 'Check-ins help Nuvora suggest study support. They are not medical assessments or diagnoses.' },
+  { title: 'You stay in control', text: 'Your tasks and check-ins stay private to your account and are not automatically shared with your university.' },
+];
+
+// Shown once, only in Firebase mode (a genuine first-time visitor), before
+// Auth — local/demo mode skips straight in, as it always has. Kept short
+// on purpose: three small screens, not a long carousel.
+function Onboarding({ onDone }) {
+  const [step, setStep] = useState(0);
+  const screen = ONBOARDING_SCREENS[step];
+  const last = step === ONBOARDING_SCREENS.length - 1;
+  return <main><section className="phone splash">
+    <Mascot size={90} />
+    <h1>{screen.title}</h1>
+    <p>{screen.text}</p>
+    <div className="row" style={{ justifyContent: 'center', gap: 6, margin: '10px 0 18px' }} aria-hidden="true">
+      {ONBOARDING_SCREENS.map((_, i) => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: i === step ? 'var(--purple)' : 'var(--purple-soft)' }} />)}
+    </div>
+    <button className="primary" onClick={() => (last ? onDone() : setStep(s => s + 1))}>{last ? 'Get started' : 'Continue'}</button>
+    {!last && <button className="link" onClick={onDone}>Skip</button>}
+  </section></main>;
+}
+
 function Auth() {
   const [mode, setMode] = useState('login'); // login | signup | reset
   const [email, setEmail] = useState(''), [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetStatus, setResetStatus] = useState({ text: '', tone: 'status' });
@@ -252,7 +308,16 @@ function Auth() {
     setBusy(true);
     setError('');
     try {
-      mode === 'login' ? await signInWithEmailAndPassword(auth, email, password) : await createUserWithEmailAndPassword(auth, email, password);
+      if (mode === 'login') {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        // Optional and skippable, per the brief — no surname, student ID,
+        // or anything else identifying is ever requested here.
+        if (displayName.trim()) {
+          await saveSettings(credential.user.uid, { displayName: displayName.trim() });
+        }
+      }
     } catch (err) {
       setError(authErrorMessage(err));
     } finally {
@@ -309,6 +374,7 @@ function Auth() {
     <form onSubmit={submit}>
       <label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
       <label>Password<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
+      {mode === 'signup' && <label>What should Nuvora call you? (optional)<input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="You can skip this" /></label>}
       {mode === 'login' && <button type="button" className="link" style={{ padding: 0, marginTop: -8 }} onClick={() => { setResetEmail(email); setMode('reset'); }}>Forgot password?</button>}
       <StatusMessage text={error} tone="error" />
       <button className="primary" disabled={busy}>{busy ? 'Please wait…' : (mode === 'login' ? 'Log in' : 'Create account')}</button>
@@ -340,10 +406,14 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy 
 
   return <>
     <div className="welcome"><div><small>{timeOfDayGreeting().toUpperCase()}</small><h1>How are things feeling, {displayNameOrFallback(settings.displayName)}?</h1></div><div className="avatar" aria-hidden="true">{avatarInitial(settings.displayName)}</div></div>
-    {!risk ? <button className="checkin-card" onClick={() => go('checkin')}><div><b>Take your daily check-in</b><span>Five gentle questions · about 1 minute</span></div><Sparkles /></button> : <RiskCard risk={risk} tasks={data.tasks} />}
+    {!risk ? <button className="checkin-card" onClick={() => go('checkin')}><div><b>Check in when it would help</b><span>A few gentle questions · skip anytime</span></div><Sparkles /></button> : <RiskCard risk={risk} tasks={data.tasks} />}
     <button className="overwhelmed" onClick={() => go('overwhelmed')}><Heart /> I’m feeling overwhelmed</button>
     <div className="section-title"><h2>One small next step</h2><button onClick={() => go('tasks')}>View plan</button></div>
-    {recommendation ? <FocusTask key={recommendation.task.id} task={recommendation.task} actionText={recommendation.actionText} uid={uid} setData={setData} /> : <Empty title="Your plan is clear" text="That is enough for today." />}
+    {recommendation ? <FocusTask key={recommendation.task.id} task={recommendation.task} actionText={recommendation.actionText} uid={uid} setData={setData} /> : (
+      data.tasks.length === 0
+        ? <div className="empty"><Leaf /><h2>Your space is ready.</h2><p>Add one thing that's currently on your mind. It doesn't need to be your biggest task.</p><button className="primary" style={{ width: 'auto', padding: '12px 22px' }} onClick={() => go('tasks')}>+ Add one task</button><button className="link" onClick={() => go('checkin')}>Take a short check-in first</button></div>
+        : <Empty title="Your plan is clear" text="That is enough for today." />
+    )}
     <h2>Today’s plan</h2>
     {data.tasks.filter(t => effectiveBucket(t) === 'today' && !t.done).slice(0, 3).map(t => <MiniTask key={t.id} task={t} />)}
   </>;
@@ -352,12 +422,13 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy 
 function RiskCard({ risk, tasks }) {
   const explanation = explainPressure(risk, tasks);
   return <article className={`risk ${risk.band.toLowerCase()}`}>
-    <div className="score">{risk.score}</div>
     <div>
-      <small>WORKLOAD PRESSURE · {risk.band.toUpperCase()}</small>
-      <h2>{risk.message}</h2>
+      <small>WORKLOAD PRESSURE</small>
+      <h2>{risk.band} pressure</h2>
+      <p>{risk.message}</p>
       <details>
         <summary>Why this result?</summary>
+        <p className="hint">Pressure estimate: {risk.score}/100 — a supportive estimate, not a diagnosis.</p>
         <ul className="explanation-list">{explanation.map((line, i) => <li key={i}>{line}</li>)}</ul>
       </details>
     </div>
@@ -663,11 +734,11 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
   if (risk) return <>
     <button className="back" onClick={() => { resetDraft(); go('today'); }}><ChevronLeft /> Today</button>
     <div className="result">
-      <div className={`big-score ${risk.band.toLowerCase()}`}>{risk.score}</div>
-      <small>{risk.band.toUpperCase()} WORKLOAD PRESSURE</small>
-      <h1 ref={resultHeadingRef} tabIndex={-1}>{risk.message}</h1>
+      <small>WORKLOAD PRESSURE</small>
+      <h1 ref={resultHeadingRef} tabIndex={-1}>{risk.band} pressure</h1>
+      <p>{risk.message}</p>
       <p>This result is not a diagnosis. It only helps Nuvora adjust today’s support.</p>
-      <details><summary>Why this result?</summary><ul className="explanation-list">{explainPressure(risk, data.tasks).map((line, i) => <li key={i}>{line}</li>)}</ul></details>
+      <details><summary>Why this result?</summary><p className="hint">Pressure estimate: {risk.score}/100 — a supportive estimate, not a diagnosis.</p><ul className="explanation-list">{explainPressure(risk, data.tasks).map((line, i) => <li key={i}>{line}</li>)}</ul></details>
       <button className="primary" onClick={() => { resetDraft(); go(risk.band === 'Higher' ? 'overwhelmed' : 'today'); }}>Choose my next step</button>
     </div>
   </>;
@@ -764,12 +835,12 @@ function FocusTimer({ seconds = 120 }) {
 function Learn() {
   return <>
     <div className="page-title"><h1>Small resets</h1><Leaf /></div>
-    <p>Short activities for difficult moments. Choose only what feels useful.</p>
+    <p>Small, immediate actions — not long articles. Choose only what feels useful.</p>
     {activities.map(([title, text], i) => <article className="activity" key={title}>
       <div>{i + 1}</div>
       <section><small>{i === 0 ? '2–3 MIN · RECOMMENDED' : '2–5 MIN'}</small><h2>{title}</h2><p>{text}</p>
         <details><summary>Start activity</summary><div className="activity-step">{text}<br /><br />Stopping after this is completely okay.
-          {title === 'Two-minute task starter' && <FocusTimer seconds={120} />}
+          {title === 'The 2-minute start' && <FocusTimer seconds={120} />}
         </div></details>
       </section>
     </article>)}
@@ -995,44 +1066,48 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
     <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
     <div className="page-title"><h1>Privacy &amp; data</h1><Shield /></div>
 
-    <article className="panel">
-      <h2>What Nuvora stores</h2>
+    <details className="panel"><summary>What Nuvora stores</summary>
       <p>Your tasks and their small steps, your daily check-in answers and the workload-pressure result calculated from them, any weekly reflections you write, your accessibility preferences, and a small count of how many steps you've completed and which support strategies you've used.</p>
-      <h2>Why</h2>
-      <p>Only to run the features you're using — recommending a next step, showing your check-in trends, and remembering your settings. Nothing is used for any other purpose.</p>
-      <h2>Where</h2>
-      <p>{firebaseEnabled ? 'In your account on Firebase (Google Cloud), accessible only to you — see the Firestore security rules for how that\u2019s enforced.' : 'Nowhere but this browser. Nuvora is running in local demo mode: everything is stored in this browser\u2019s local storage and never leaves this device. Clearing your browser data or using a different browser will lose it.'}</p>
-      <h2>Important</h2>
-      <p>The workload-pressure band is <b>not a diagnosis</b> of ADHD, autism, burnout, or any condition — it's a supportive, rule-based estimate from your own answers. Your data is <b>never automatically sent to tutors</b>, your university, or anyone else — the Support screen's "copy summary" only ever copies text to your own clipboard, for you to send yourself if you choose to.</p>
-    </article>
+    </details>
 
-    <article className="panel">
-      <h2>Export your data</h2>
+    <details className="panel"><summary>How your information is used</summary>
+      <p>Only to run the features you're using — recommending a next step, showing your check-in trends, and remembering your settings. Nothing is used for any other purpose.</p>
+    </details>
+
+    <details className="panel"><summary>Who can see your information</summary>
+      <p>{firebaseEnabled ? 'In your account on Firebase (Google Cloud), accessible only to you — see the Firestore security rules for how that\u2019s enforced.' : 'Nowhere but this browser. Nuvora is running in local demo mode: everything is stored in this browser\u2019s local storage and never leaves this device. Clearing your browser data or using a different browser will lose it.'}</p>
+      <p>Your data is <b>never automatically sent to tutors</b>, your university, or anyone else — the Support screen's "copy summary" only ever copies text to your own clipboard, for you to send yourself if you choose to.</p>
+    </details>
+
+    <details className="panel"><summary>About the workload-pressure result</summary>
+      <p>The workload-pressure band is <b>not a diagnosis</b> of ADHD, autism, burnout, or any condition — it's a supportive, rule-based estimate from your own answers, explained in full on the "Why this result?" details wherever it's shown.</p>
+    </details>
+
+    <details className="panel"><summary>Export your data</summary>
       <p>Download everything Nuvora has stored for you as a plain JSON file.</p>
       <button className="primary" disabled={!!busy} onClick={handleExport}><Download /> {busy === 'export' ? 'Preparing…' : 'Download my data'}</button>
-    </article>
+    </details>
 
-    <article className="panel">
-      <h2>Delete check-in &amp; reflection history</h2>
-      <p>Removes every check-in and reflection. Your tasks and settings are left untouched.</p>
-      <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCheckins}><Trash2 /> {busy === 'checkins' ? 'Deleting…' : 'Delete check-in history'}</button>
-    </article>
+    <details className="panel"><summary>Delete your data</summary>
+      <div className="panel" style={{ margin: '10px 0', boxShadow: 'none' }}>
+        <h3>Check-in &amp; reflection history</h3>
+        <p>Removes every check-in and reflection. Your tasks and settings are left untouched.</p>
+        <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCheckins}><Trash2 /> {busy === 'checkins' ? 'Deleting…' : 'Delete check-in history'}</button>
+      </div>
+      <div className="panel" style={{ margin: '10px 0', boxShadow: 'none' }}>
+        <h3>Completed tasks</h3>
+        <p>Removes tasks you've marked complete. Tasks still open are left untouched.</p>
+        <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCompleted}><Trash2 /> {busy === 'completed' ? 'Deleting…' : 'Delete completed tasks'}</button>
+      </div>
+      <div className="panel" style={{ margin: '10px 0', boxShadow: 'none' }}>
+        <h3>Everything</h3>
+        <p>Permanently removes every task, check-in, reflection, and setting. Type <b>DELETE</b> below to confirm.</p>
+        <input type="text" value={confirmAll} disabled={busy === 'all'} onChange={e => setConfirmAll(e.target.value)} placeholder="Type DELETE to confirm" style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginBottom: 10 }} />
+        <button className="danger-btn" disabled={!!busy} onClick={handleDeleteAll}><Trash2 /> {busy === 'all' ? 'Deleting…' : 'Delete all my data'}</button>
+      </div>
+    </details>
 
-    <article className="panel">
-      <h2>Delete completed tasks</h2>
-      <p>Removes tasks you've marked complete. Tasks still open are left untouched.</p>
-      <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCompleted}><Trash2 /> {busy === 'completed' ? 'Deleting…' : 'Delete completed tasks'}</button>
-    </article>
-
-    <article className="panel">
-      <h2>Delete all my data</h2>
-      <p>Permanently removes everything — every task, check-in, reflection, and setting. Type <b>DELETE</b> below to confirm.</p>
-      <input type="text" value={confirmAll} disabled={busy === 'all'} onChange={e => setConfirmAll(e.target.value)} placeholder="Type DELETE to confirm" style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginBottom: 10 }} />
-      <button className="danger-btn" disabled={!!busy} onClick={handleDeleteAll}><Trash2 /> {busy === 'all' ? 'Deleting…' : 'Delete all my data'}</button>
-    </article>
-
-    {firebaseEnabled && <article className="panel">
-      <h2>Delete my account</h2>
+    {firebaseEnabled && <details className="panel"><summary>Delete your account</summary>
       <p>Permanently deletes all your data and your Nuvora account itself. Type <b>DELETE</b> and confirm your password below.</p>
       <input type="text" value={confirmAccount} disabled={busy === 'account'} onChange={e => setConfirmAccount(e.target.value)} placeholder="Type DELETE to confirm" style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginBottom: 10 }} />
       <label style={{ display: 'block', marginBottom: 10 }}>
@@ -1040,7 +1115,7 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
         <input type="password" value={password} disabled={busy === 'account'} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1px solid rgba(58,58,66,0.14)', marginTop: 6 }} />
       </label>
       <button className="danger-btn" disabled={!!busy} onClick={handleDeleteAccount}><Trash2 /> {busy === 'account' ? 'Deleting…' : 'Delete my account'}</button>
-    </article>}
+    </details>}
 
     <StatusMessage text={status.text} tone={status.tone} />
   </>;
@@ -1049,7 +1124,18 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
 function Support({ data }) {
   const risk = data.checkins[0]?.risk;
   const [status, setStatus] = useState({ text: '', tone: 'status' });
-  const summary = risk ? `My current academic pressure is ${risk.band.toLowerCase()} (${risk.score}/100). A smaller first step and a clear priority would help.` : '';
+  const explanation = risk ? explainPressure(risk, data.tasks) : [];
+  const summary = risk ? [
+    `Right now I'm experiencing ${risk.band.toLowerCase()} study pressure.`,
+    '',
+    "What I'm finding difficult:",
+    ...explanation.map(line => `- ${line}`),
+    '',
+    'What could help:',
+    '- Clarifying the nearest deadline',
+    '- Help identifying one priority',
+    '- Breaking the first action down',
+  ].join('\n') : '';
 
   async function copy() {
     setStatus({ text: '', tone: 'status' });
@@ -1065,7 +1151,7 @@ function Support({ data }) {
     <div className="page-title"><h1>Support</h1><Heart /></div>
     <article className="support-card">
       <h2>A summary you control</h2>
-      <p>{risk ? summary : 'Complete a check-in to prepare a short support summary.'}</p>
+      <p style={{ whiteSpace: 'pre-line' }}>{risk ? summary : 'Complete a check-in to prepare a short support summary.'}</p>
       <button className="primary" disabled={!risk} onClick={copy}>Copy summary</button>
       <StatusMessage text={status.text} tone={status.tone} />
     </article>

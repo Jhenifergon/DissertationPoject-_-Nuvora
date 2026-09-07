@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import NuvoraApp from './NuvoraApp';
 
 beforeEach(() => {
@@ -69,7 +69,7 @@ describe('error handling', () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
-    fireEvent.click(screen.getByText('Take your daily check-in'));
+    fireEvent.click(screen.getByText('Check in when it would help'));
 
     const group = await screen.findByRole('radiogroup');
     for (let i = 0; i < 5; i++) {
@@ -129,5 +129,25 @@ describe('live status messages carry the correct ARIA role', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy summary' }));
     const status = await screen.findByRole('alert');
     expect(status).toHaveTextContent(/couldn't copy/);
+  });
+});
+
+describe('offline banner', () => {
+  it('does not show when navigator.onLine is unknown (e.g. stubbed without it) — assumes online', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument();
+  });
+
+  it('shows when the browser goes offline, and hides again when back online', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument();
+
+    fireEvent(window, new Event('offline'));
+    await screen.findByText(/You’re offline\. Some changes may take a little longer to sync\./);
+
+    fireEvent(window, new Event('online'));
+    await waitFor(() => expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument());
   });
 });

@@ -83,11 +83,11 @@ describe('end-to-end journeys', () => {
     // journey also naturally covers the Overwhelmed Mode suggestion)
     fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     await screen.findByText('How are things feeling, there?');
-    fireEvent.click(screen.getByText('Take your daily check-in'));
+    fireEvent.click(screen.getByText('Check in when it would help'));
     await answerCheckin([4, 1, 1, 1, 1]);
 
     // 4. View the workload-pressure explanation
-    await screen.findByText('HIGHER WORKLOAD PRESSURE');
+    await screen.findByText('Higher pressure');
     fireEvent.click(screen.getByText('Why this result?'));
     expect(screen.getByText(/largest contributor/)).toBeInTheDocument();
 
@@ -144,6 +144,7 @@ describe('end-to-end journeys', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     fireEvent.click(await screen.findByText('Privacy & data'));
     await screen.findByText('Privacy & data', { selector: 'h1' });
+    fireEvent.click(screen.getByText('Delete your data'));
 
     const confirmInput = screen.getByPlaceholderText('Type DELETE to confirm');
     fireEvent.change(confirmInput, { target: { value: 'DELETE' } });

@@ -35,10 +35,11 @@ vi.mock('@/lib/firebase', () => ({
 
 const mockLoadData = vi.fn();
 const mockDeleteAllData = vi.fn();
+const mockSaveSettings = vi.fn();
 
 vi.mock('@/lib/store', async () => {
   const actual = await vi.importActual('@/lib/store');
-  return { ...actual, loadData: (...args) => mockLoadData(...args), deleteAllData: (...args) => mockDeleteAllData(...args) };
+  return { ...actual, loadData: (...args) => mockLoadData(...args), deleteAllData: (...args) => mockDeleteAllData(...args), saveSettings: (...args) => mockSaveSettings(...args) };
 });
 
 const FAKE_USER = { uid: 'test-uid', email: 'test@example.com' };
@@ -52,6 +53,12 @@ function signedIn() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // These tests are about login/signup/deletion behaviour, not the
+  // onboarding screen — mark onboarding as already seen so Auth (or the
+  // signed-in app) is reached directly, matching how the other test
+  // files' beforeEach blocks already establish a controlled starting
+  // state rather than relying on defaults.
+  localStorage.setItem('nuvora-onboarding-seen', '1');
 });
 
 afterEach(() => {
@@ -182,8 +189,11 @@ describe('Firebase mode: account deletion order', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     fireEvent.click(await screen.findByText('Privacy & data'));
     await screen.findByText('Privacy & data', { selector: 'h1' });
-    // "Type DELETE to confirm" appears in both the "delete all data" and
-    // "delete my account" panels — the account panel's is the last one.
+    fireEvent.click(screen.getByText('Delete your account'));
+    // Collapsed <details> content is still present in the DOM (just
+    // visually hidden), so "Delete your data"'s confirm input is also
+    // still matched here — the account panel's is the one that comes
+    // last in document order.
     const confirmInputs = screen.getAllByPlaceholderText('Type DELETE to confirm');
     fireEvent.change(confirmInputs[confirmInputs.length - 1], { target: { value: 'DELETE' } });
     fireEvent.change(screen.getByLabelText('Confirm your password'), { target: { value: 'mypassword' } });
@@ -221,6 +231,7 @@ describe('Firebase mode: account deletion order', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     fireEvent.click(await screen.findByText('Privacy & data'));
     await screen.findByText('Privacy & data', { selector: 'h1' });
+    fireEvent.click(screen.getByText('Delete your account'));
     const confirmInputs = screen.getAllByPlaceholderText('Type DELETE to confirm');
     fireEvent.change(confirmInputs[confirmInputs.length - 1], { target: { value: 'DELETE' } });
     // No password entered.
@@ -228,5 +239,89 @@ describe('Firebase mode: account deletion order', () => {
 
     await screen.findByText('Enter your password to confirm.');
     expect(mockReauthenticate).not.toHaveBeenCalled();
+  });
+});
+
+describe('Firebase mode: onboarding', () => {
+  it('shows a short onboarding before Auth for a genuine first-time visitor', async () => {
+    localStorage.removeItem('nuvora-onboarding-seen'); // undo the file-level beforeEach for this test only
+    signedOut();
+    const NuvoraApp = (await import('./NuvoraApp')).default;
+    render(<NuvoraApp />);
+    await screen.findByText('Move forward without pressure');
+    expect(screen.queryByText('Welcome to your calm study space')).not.toBeInTheDocument();
+  });
+
+  it('reaches Auth after clicking through all three onboarding screens', async () => {
+    localStorage.removeItem('nuvora-onboarding-seen');
+    signedOut();
+    const NuvoraApp = (await import('./NuvoraApp')).default;
+    render(<NuvoraApp />);
+    await screen.findByText('Move forward without pressure');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('Support, not diagnosis');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('You stay in control');
+    fireEvent.click(screen.getByRole('button', { name: 'Get started' }));
+    await screen.findByText('Welcome to your calm study space');
+  });
+
+  it('Skip reaches Auth immediately and is remembered on the next visit', async () => {
+    localStorage.removeItem('nuvora-onboarding-seen');
+    signedOut();
+    const NuvoraApp = (await import('./NuvoraApp')).default;
+    const { unmount } = render(<NuvoraApp />);
+    await screen.findByText('Move forward without pressure');
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
+    await screen.findByText('Welcome to your calm study space');
+
+    unmount();
+    render(<NuvoraApp />);
+    await screen.findByText('Welcome to your calm study space');
+    expect(screen.queryByText('Move forward without pressure')).not.toBeInTheDocument();
+  });
+
+  it('does not show onboarding again once already seen', async () => {
+    localStorage.setItem('nuvora-onboarding-seen', '1');
+    signedOut();
+    const NuvoraApp = (await import('./NuvoraApp')).default;
+    render(<NuvoraApp />);
+    await screen.findByText('Welcome to your calm study space');
+  });
+});
+
+describe('Firebase mode: optional display name at signup', () => {
+  it('saves the display name after a successful signup, when provided', async () => {
+    signedOut();
+    mockSignUp.mockResolvedValue({ user: { uid: 'new-uid' } });
+    const NuvoraApp = (await import('./NuvoraApp')).default;
+    render(<NuvoraApp />);
+    await screen.findByText('Welcome to your calm study space');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }));
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password1' } });
+    fireEvent.change(screen.getByLabelText(/What should Nuvora call you/), { target: { value: 'Jhenifer' } });
+    const form = document.querySelector('form');
+    fireEvent.click(within(form).getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() => expect(mockSaveSettings).toHaveBeenCalledWith('new-uid', { displayName: 'Jhenifer' }));
+  });
+
+  it('does not call saveSettings at all when the name is left blank (fully skippable)', async () => {
+    signedOut();
+    mockSignUp.mockResolvedValue({ user: { uid: 'new-uid' } });
+    const NuvoraApp = (await import('./NuvoraApp')).default;
+    render(<NuvoraApp />);
+    await screen.findByText('Welcome to your calm study space');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }));
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password1' } });
+    const form = document.querySelector('form');
+    fireEvent.click(within(form).getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() => expect(mockSignUp).toHaveBeenCalled());
+    expect(mockSaveSettings).not.toHaveBeenCalled();
   });
 });

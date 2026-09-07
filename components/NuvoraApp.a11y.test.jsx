@@ -59,7 +59,7 @@ describe('accessibility: main screens (axe-core)', () => {
   it('Check-in question screen has no automated violations', async () => {
     const { container } = render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
-    fireEvent.click(screen.getByText('Take your daily check-in'));
+    fireEvent.click(screen.getByText('Check in when it would help'));
     await screen.findByRole('radiogroup');
     const violations = await runAxe(container);
     expect(violations, describeViolations(violations)).toHaveLength(0);
@@ -121,7 +121,7 @@ describe('accessibility: check-in radiogroup keyboard navigation (manual DOM ass
   it('ArrowRight moves both selection and focus to the next option', async () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
-    fireEvent.click(screen.getByText('Take your daily check-in'));
+    fireEvent.click(screen.getByText('Check in when it would help'));
     const group = await screen.findByRole('radiogroup');
     const options = within(group).getAllByRole('radio');
     options[0].focus();
@@ -134,7 +134,7 @@ describe('accessibility: check-in radiogroup keyboard navigation (manual DOM ass
   it('End moves selection to the last option ("Not sure")', async () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
-    fireEvent.click(screen.getByText('Take your daily check-in'));
+    fireEvent.click(screen.getByText('Check in when it would help'));
     const group = await screen.findByRole('radiogroup');
     const options = within(group).getAllByRole('radio');
     options[0].focus();

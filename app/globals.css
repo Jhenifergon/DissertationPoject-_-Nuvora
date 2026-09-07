@@ -31,3 +31,7 @@ button.check[aria-pressed="true"] .check-dot{background:var(--mint);color:white;
 .trend-entry{margin:2px 0}
 .trend-entry summary{cursor:pointer;min-height:44px}
 .trend-entry .explanation-list{margin:0 0 10px 32px}
+details.panel{padding:14px 18px}
+details.panel > summary{font-weight:800;font-size:1.05em;cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--ink);list-style:revert}
+details.panel[open] > summary{margin-bottom:10px}
+details.panel h3{font-size:.95em;margin:0 0 6px}
