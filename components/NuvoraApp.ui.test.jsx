@@ -151,3 +151,101 @@ describe('offline banner', () => {
     await waitFor(() => expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument());
   });
 });
+
+describe('navigation: every screen reachable without the bottom nav must have a way back', () => {
+  // Regression test: Settings had no way back to Today at all — the
+  // bottom nav is deliberately hidden on it (like Check-in, Overwhelmed
+  // Mode, Reflection, and Privacy), but unlike those screens it had no
+  // "back" button either, making it a genuine dead end reachable only by
+  // reloading the page. Every screen in this hidden-from-nav list must
+  // have a working way back.
+  const screensToCheck = [
+    { openVia: 'Accessibility settings', arriveAt: 'Calm accessibility settings' },
+    { openVia: 'Privacy & data', arriveAt: 'Privacy & data' },
+  ];
+
+  for (const { openVia, arriveAt } of screensToCheck) {
+    it(`${openVia}: has a working way back to Today`, async () => {
+      render(<NuvoraApp />);
+      await screen.findByText('How are things feeling, there?');
+      fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+      fireEvent.click(await screen.findByText(openVia));
+      await screen.findByText(arriveAt, { selector: 'h1' });
+
+      const backButton = screen.getByRole('button', { name: /Today/ });
+      fireEvent.click(backButton);
+      await screen.findByText('How are things feeling, there?');
+    });
+  }
+});
+
+describe('Calm Mode extends beyond Today (Tasks, Learn, Progress)', () => {
+  function seedRichState(calmMode) {
+    const now = new Date();
+    const inDays = n => { const d = new Date(now); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [
+        { id: 't1', title: 'Today task', module: 'Other', due: inDays(0), priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'A visible step preview', done: false, completedAt: null } },
+        { id: 't2', title: 'Later task', module: 'Other', due: inDays(20), priority: 'normal', done: false, bucket: 'later', currentStep: { id: 's2', text: 'x', done: false, completedAt: null } },
+      ],
+      checkins: [{ id: 'c1', answers: {}, risk: { score: 40, band: 'Moderate', factors: { workload: 40, taskInitiation: 40, focus: 40, rest: 40, confidence: 40 }, message: 'x' }, createdAt: now.toISOString() }],
+      reflections: [],
+      settings: { calmMode },
+      stats: { stepsCompleted: 2, strategyUses: { start: 1, big: 0, energy: 0, reset: 0, support: 0 } },
+    }));
+  }
+
+  it('Tasks: hides the week/later tabs and each task\'s step preview by default, both reachable via a link', async () => {
+    seedRichState(true);
+    render(<NuvoraApp />);
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await screen.findByText('My plan');
+
+    expect(screen.queryByRole('button', { name: 'week' })).not.toBeInTheDocument();
+    expect(screen.queryByText('A visible step preview')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Show week & later'));
+    expect(screen.getByRole('button', { name: 'week' })).toBeInTheDocument();
+  });
+
+  it('Learn: shows only the first activity by default, with a link to see the rest', async () => {
+    seedRichState(true);
+    render(<NuvoraApp />);
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    await screen.findByText('The 2-minute start');
+
+    expect(screen.queryByText('Shrink the assignment')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reset Space')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Show other small resets'));
+    expect(screen.getByText('Shrink the assignment')).toBeInTheDocument();
+    expect(screen.getByText('Reset Space')).toBeInTheDocument();
+  });
+
+  it('Progress: collapses strategies and trend history behind one link', async () => {
+    seedRichState(true);
+    render(<NuvoraApp />);
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    await screen.findByText('Progress, without pressure');
+
+    expect(screen.queryByText('Helpful strategies')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recent pressure patterns')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Show trends & strategies'));
+    expect(screen.getByText('Helpful strategies')).toBeInTheDocument();
+    expect(screen.getByText('Recent pressure patterns')).toBeInTheDocument();
+  });
+
+  it('none of this hides anything when Calm Mode is off — same screens show full detail by default', async () => {
+    seedRichState(false);
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await screen.findByText('My plan');
+    expect(screen.getByRole('button', { name: 'week' })).toBeInTheDocument();
+    expect(screen.getByText('A visible step preview')).toBeInTheDocument();
+  });
+});

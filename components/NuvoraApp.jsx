@@ -219,13 +219,13 @@ export default function NuvoraApp() {
       </Drawer>
       <div className="content">
         {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
-        {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} />}
+        {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} calmMode={settings.calmMode} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
-        {screen === 'learn' && <Learn />}
+        {screen === 'learn' && <Learn calmMode={settings.calmMode} />}
         {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} go={go} />}
         {screen === 'reflection' && <Reflection uid={user.uid} data={data} setData={setData} go={go} />}
         {screen === 'support' && <Support data={data} />}
-        {screen === 'settings' && <SettingsPage value={settings} busy={settingsBusy} error={settingsError} onChange={updateSettings} />}
+        {screen === 'settings' && <SettingsPage value={settings} busy={settingsBusy} error={settingsError} onChange={updateSettings} go={go} />}
         {screen === 'privacy' && <Privacy uid={user.uid} data={data} setData={setData} updateSettings={updateSettings} go={go} />}
         {screen === 'overwhelmed' && <Overwhelmed data={data} uid={user.uid} setData={setData} go={go} settings={settings} />}
       </div>
@@ -537,7 +537,7 @@ function TaskForm({ initial, tasks, onCancel, onSave, saving }) {
   </form>;
 }
 
-function Tasks({ data, uid, setData }) {
+function Tasks({ data, uid, setData, calmMode }) {
   const [tab, setTab] = useState('today');
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -545,6 +545,7 @@ function Tasks({ data, uid, setData }) {
   const [busyIds, setBusyIds] = useState(() => new Set());
   const [error, setError] = useState('');
   const [undo, setUndo] = useState(null); // { id, title }
+  const [showAllTabs, setShowAllTabs] = useState(false);
   const filtered = data.tasks.filter(t => effectiveBucket(t) === tab);
 
   async function create(fields) {
@@ -627,7 +628,9 @@ function Tasks({ data, uid, setData }) {
 
   return <>
     <div className="page-title"><h1>My plan</h1><button className="icon filled" onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button></div>
-    <div className="tabs">{['today', 'week', 'later'].map(t => <button className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t}</button>)}</div>
+    {calmMode && !showAllTabs
+      ? <button className="link" onClick={() => setShowAllTabs(true)}>Show week &amp; later</button>
+      : <div className="tabs">{['today', 'week', 'later'].map(t => <button className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t}</button>)}</div>}
     {adding && <TaskForm tasks={data.tasks} saving={saving} onCancel={() => setAdding(false)} onSave={create} />}
     <StatusMessage text={error} tone="error" />
     {undo && <div className="status-msg status" role="status">
@@ -643,7 +646,7 @@ function Tasks({ data, uid, setData }) {
         <div>
           <small>{t.module} · {relativeDueLabel(t.due)}{t.priority === 'high' && ' · High priority'}</small>
           <h2>{t.title}</h2>
-          <p>{t.currentStep?.text}</p>
+          {!calmMode && <p>{t.currentStep?.text}</p>}
         </div>
         <button className="icon" aria-label={`Edit ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => setEditingId(t.id)}><Pencil /></button>
         <button className="icon trash" aria-label={`Delete ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => remove(t)}><Trash2 /></button>
@@ -832,11 +835,13 @@ function FocusTimer({ seconds = 120 }) {
   </div>;
 }
 
-function Learn() {
+function Learn({ calmMode }) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleActivities = calmMode && !showAll ? activities.slice(0, 1) : activities;
   return <>
     <div className="page-title"><h1>Small resets</h1><Leaf /></div>
     <p>Small, immediate actions — not long articles. Choose only what feels useful.</p>
-    {activities.map(([title, text], i) => <article className="activity" key={title}>
+    {visibleActivities.map(([title, text], i) => <article className="activity" key={title}>
       <div>{i + 1}</div>
       <section><small>{i === 0 ? '2–3 MIN · RECOMMENDED' : '2–5 MIN'}</small><h2>{title}</h2><p>{text}</p>
         <details><summary>Start activity</summary><div className="activity-step">{text}<br /><br />Stopping after this is completely okay.
@@ -844,12 +849,14 @@ function Learn() {
         </div></details>
       </section>
     </article>)}
-    <article className="panel">
-      <h2>Reset Space</h2>
-      <p>For a guided breathing exercise or a longer break, the NHS's Every Mind Matters has free, evidence-based resources.</p>
-      <a className="option" href="https://www.nhs.uk/every-mind-matters/" target="_blank" rel="noopener noreferrer">Open Every Mind Matters (opens in a new tab, leaves Nuvora) ↗</a>
-      <p className="hint">This is an external NHS website, not part of Nuvora. It is not a replacement for professional support.</p>
-    </article>
+    {calmMode && !showAll
+      ? <button className="link" onClick={() => setShowAll(true)}>Show other small resets</button>
+      : <article className="panel">
+        <h2>Reset Space</h2>
+        <p>For a guided breathing exercise or a longer break, the NHS's Every Mind Matters has free, evidence-based resources.</p>
+        <a className="option" href="https://www.nhs.uk/every-mind-matters/" target="_blank" rel="noopener noreferrer">Open Every Mind Matters (opens in a new tab, leaves Nuvora) ↗</a>
+        <p className="hint">This is an external NHS website, not part of Nuvora. It is not a replacement for professional support.</p>
+      </article>}
   </>;
 }
 
@@ -858,6 +865,7 @@ const STRATEGY_LABELS = { start: 'Getting started', big: 'Breaking a task down',
 function Progress({ data, settings, updateSettings, settingsBusy, go }) {
   const totalStrategyUses = Object.values(data.stats.strategyUses).reduce((a, b) => a + b, 0);
   const usedStrategies = Object.entries(data.stats.strategyUses).filter(([, n]) => n > 0);
+  const [showTrends, setShowTrends] = useState(false);
 
   if (settings.hideProgress) {
     return <>
@@ -867,14 +875,7 @@ function Progress({ data, settings, updateSettings, settingsBusy, go }) {
     </>;
   }
 
-  return <>
-    <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
-    <p>These numbers are just for your own reflection — there's no target to hit, and nothing here is shared with anyone.</p>
-    <div className="stats">
-      <article><small>CHECK-INS SO FAR</small><b>{data.checkins.length}</b></article>
-      <article><small>SMALL STEPS TAKEN</small><b>{data.stats.stepsCompleted}</b></article>
-      <article><small>STRATEGIES USED</small><b>{totalStrategyUses}</b></article>
-    </div>
+  const trendsAndStrategies = <>
     {usedStrategies.length > 0 && <div className="panel">
       <h2>Helpful strategies</h2>
       {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{n}</b></div>)}
@@ -892,6 +893,19 @@ function Progress({ data, settings, updateSettings, settingsBusy, go }) {
       </details>;
     })}
     {!data.checkins.length && <Empty title="Your trends will appear here" text="Complete a check-in whenever it feels helpful." />}
+  </>;
+
+  return <>
+    <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
+    <p>These numbers are just for your own reflection — there's no target to hit, and nothing here is shared with anyone.</p>
+    <div className="stats">
+      <article><small>CHECK-INS SO FAR</small><b>{data.checkins.length}</b></article>
+      <article><small>SMALL STEPS TAKEN</small><b>{data.stats.stepsCompleted}</b></article>
+      <article><small>STRATEGIES USED</small><b>{totalStrategyUses}</b></article>
+    </div>
+    {settings.calmMode && !showTrends
+      ? <button className="link" onClick={() => setShowTrends(true)}>Show trends &amp; strategies</button>
+      : trendsAndStrategies}
     <button className="overwhelmed" onClick={() => go('reflection')}>Weekly reflection</button>
     <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, hideProgress: true })}>Hide these details</button>
   </>;
@@ -1162,8 +1176,9 @@ function Support({ data }) {
   </>;
 }
 
-function SettingsPage({ value, busy, error, onChange }) {
+function SettingsPage({ value, busy, error, onChange, go }) {
   return <>
+    <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
     <h1>Calm accessibility settings</h1>
     <label className="setting" style={{ display: 'block' }}>
       <b>What should Nuvora call you?</b>
