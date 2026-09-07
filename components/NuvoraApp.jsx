@@ -809,10 +809,17 @@ function Progress({ data, settings, updateSettings, settingsBusy, go }) {
       {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{n}</b></div>)}
     </div>}
     <h2>Recent pressure patterns</h2>
-    {data.checkins.slice(0, 7).map((c, i) => <div className="trend" key={c.id || i}>
-      <span>{new Date(c.createdAt?.seconds ? c.createdAt.seconds * 1000 : c.createdAt || Date.now()).toLocaleDateString()}</span>
-      {c.risk ? <><div><i style={{ width: `${c.risk.score}%` }} /></div><b>{c.risk.score}</b></> : <span className="incomplete-tag">Incomplete</span>}
-    </div>)}
+    {data.checkins.slice(0, 7).map((c, i) => {
+      const dateLabel = new Date(c.createdAt?.seconds ? c.createdAt.seconds * 1000 : c.createdAt || Date.now()).toLocaleDateString();
+      if (!c.risk) return <div className="trend" key={c.id || i}><span>{dateLabel}</span><span className="incomplete-tag">Incomplete</span></div>;
+      // Progressive disclosure: the date/score is always visible, but the
+      // "main contributors" breakdown for that day only shows if opened —
+      // seven full breakdowns at once would be a lot to scan by default.
+      return <details className="trend-entry" key={c.id || i}>
+        <summary className="trend"><span>{dateLabel}</span><div><i style={{ width: `${c.risk.score}%` }} /></div><b>{c.risk.score}</b></summary>
+        <ul className="explanation-list">{explainPressure(c.risk, data.tasks).map((line, j) => <li key={j}>{line}</li>)}</ul>
+      </details>;
+    })}
     {!data.checkins.length && <Empty title="Your trends will appear here" text="Complete a check-in whenever it feels helpful." />}
     <button className="overwhelmed" onClick={() => go('reflection')}>Weekly reflection</button>
     <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, hideProgress: true })}>Hide these details</button>

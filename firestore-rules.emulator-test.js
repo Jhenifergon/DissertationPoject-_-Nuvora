@@ -74,24 +74,33 @@ describe('firestore.rules — users/{userId} document', () => {
 });
 
 describe('firestore.rules — nested subcollections (tasks, checkins, reflections)', () => {
+  // reflections have no schema requirement, so a generic document is fine
+  // there; tasks and checkins need a minimally valid shape or the new
+  // schema validation (see below) would reject the setup write itself.
+  const validDoc = {
+    tasks: { title: 'Example task', done: false },
+    checkins: { answers: {}, risk: { score: 40, band: 'Moderate' } },
+    reflections: { example: true },
+  };
+
   for (const sub of ['tasks', 'checkins', 'reflections']) {
     it(`lets a signed-in user read/write their own ${sub}`, async () => {
       const db = dbAs('alice');
       const ref = db.collection('users').doc('alice').collection(sub).doc('doc1');
-      await assertSucceeds(ref.set({ example: true }));
+      await assertSucceeds(ref.set(validDoc[sub]));
       await assertSucceeds(ref.get());
     });
 
     it(`blocks a signed-in user from reading someone else's ${sub}`, async () => {
       const asBob = dbAs('bob');
-      await asBob.collection('users').doc('bob').collection(sub).doc('doc1').set({ example: true });
+      await asBob.collection('users').doc('bob').collection(sub).doc('doc1').set(validDoc[sub]);
       const asAlice = dbAs('alice');
       await assertFails(asAlice.collection('users').doc('bob').collection(sub).doc('doc1').get());
     });
 
     it(`blocks a signed-in user from writing into someone else's ${sub}`, async () => {
       const db = dbAs('alice');
-      await assertFails(db.collection('users').doc('bob').collection(sub).doc('doc1').set({ example: true }));
+      await assertFails(db.collection('users').doc('bob').collection(sub).doc('doc1').set(validDoc[sub]));
     });
 
     it(`blocks an unauthenticated request from reading ${sub}`, async () => {
@@ -101,17 +110,105 @@ describe('firestore.rules — nested subcollections (tasks, checkins, reflection
   }
 });
 
+describe('firestore.rules — task schema validation', () => {
+  it('accepts a valid task', async () => {
+    const db = dbAs('alice');
+    await assertSucceeds(db.collection('users').doc('alice').collection('tasks').doc('t1').set({
+      title: 'Read chapter 2', done: false, priority: 'high', module: 'Dissertation', due: '2026-10-01',
+    }));
+  });
+
+  it('rejects a task with no title', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ done: false }));
+  });
+
+  it('rejects a task whose title is not a string', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 12345, done: false }));
+  });
+
+  it('rejects a task whose done field is not a boolean', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 'x', done: 'yes' }));
+  });
+
+  it('rejects a task with a priority outside the allowed enum', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 'x', done: false, priority: 'urgent!!' }));
+  });
+
+  it('accepts a task with no priority field at all (it is optional)', async () => {
+    const db = dbAs('alice');
+    await assertSucceeds(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 'x', done: false }));
+  });
+
+  it('a partial update (matching lib/store.js updateTask) is validated against the resulting merged document', async () => {
+    const db = dbAs('alice');
+    const ref = db.collection('users').doc('alice').collection('tasks').doc('t1');
+    await ref.set({ title: 'Original', done: false, priority: 'normal' });
+    // Only changing the title — done/priority are untouched by this write,
+    // but rules still see (and must accept) the full resulting document.
+    await assertSucceeds(ref.update({ title: 'Edited title' }));
+  });
+});
+
+describe('firestore.rules — check-in schema validation', () => {
+  it('accepts a valid scored check-in', async () => {
+    const db = dbAs('alice');
+    await assertSucceeds(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
+      answers: { mood: 2, sleep: 3, focus: 3, initiation: 3, confidence: 3 },
+      risk: { score: 45, band: 'Moderate', message: 'x' },
+    }));
+  });
+
+  it('accepts an incomplete check-in with risk explicitly null (the "not sure" path)', async () => {
+    const db = dbAs('alice');
+    await assertSucceeds(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
+      answers: {}, risk: null, incomplete: true,
+    }));
+  });
+
+  it('rejects a score above 100', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
+      risk: { score: 150, band: 'Higher' },
+    }));
+  });
+
+  it('rejects a negative score', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
+      risk: { score: -5, band: 'Low' },
+    }));
+  });
+
+  it('rejects a band outside Low/Moderate/Higher', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
+      risk: { score: 50, band: 'Severe' },
+    }));
+  });
+
+  it('rejects a non-numeric score', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
+      risk: { score: 'high', band: 'Higher' },
+    }));
+  });
+});
+
 describe('firestore.rules — deletion (matches lib/store.js delete* functions)', () => {
   it('lets a signed-in user delete their own documents', async () => {
     const db = dbAs('alice');
     const ref = db.collection('users').doc('alice').collection('tasks').doc('t1');
-    await ref.set({ title: 'x' });
+    await ref.set({ title: 'x', done: false });
     await assertSucceeds(ref.delete());
   });
 
   it('blocks a signed-in user from deleting someone else\'s documents', async () => {
     const asBob = dbAs('bob');
-    await asBob.collection('users').doc('bob').collection('tasks').doc('t1').set({ title: 'x' });
+    await asBob.collection('users').doc('bob').collection('tasks').doc('t1').set({ title: 'x', done: false });
     const asAlice = dbAs('alice');
     await assertFails(asAlice.collection('users').doc('bob').collection('tasks').doc('t1').delete());
   });
