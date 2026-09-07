@@ -327,3 +327,73 @@ describe('barrier-history-aware Overwhelmed Mode ordering', () => {
     expect(options[0]).toHaveTextContent('I do not know where to start');
   });
 });
+
+describe('Small resets are tied to the student\'s actual current task', () => {
+  function seedTask() {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [{ id: 't1', title: 'Draft chapter 2', module: 'Dissertation', due: '', priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'Open the document.', done: false, completedAt: null } }],
+      checkins: [], reflections: [], settings: {}, stats: { stepsCompleted: 0, strategyUses: {} },
+    }));
+  }
+
+  it('references the real task title instead of a generic example', async () => {
+    seedTask();
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    await screen.findByText('The 2-minute start');
+
+    expect(screen.getByText(/Don't finish "Draft chapter 2"/)).toBeInTheDocument();
+    expect(screen.getByText(/Turn "Draft chapter 2" into/)).toBeInTheDocument();
+    expect(screen.getByText(/The low-energy version of "Draft chapter 2"/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open .Draft chapter 2. in my plan/ })).toBeInTheDocument();
+  });
+
+  it('falls back to the original generic wording when there is no open task', async () => {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({ tasks: [], checkins: [], reflections: [], settings: {}, stats: { stepsCompleted: 0, strategyUses: {} } }));
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    await screen.findByText('The 2-minute start');
+
+    expect(screen.getByText("Don't finish the task. Open it and identify only the first action.")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open .* in my plan/ })).not.toBeInTheDocument();
+  });
+
+  it('"Use this as my next step" genuinely replaces the task\'s current step, not just a suggestion', async () => {
+    seedTask();
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    await screen.findByText('Shrink the assignment');
+    fireEvent.click(screen.getByRole('button', { name: 'Use this as my next step' }));
+    await screen.findByText('Saved as your next step for this task.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await screen.findByText('My plan');
+    expect(screen.getByText('Write one sentence about Draft chapter 2.')).toBeInTheDocument();
+  });
+
+  it('"I did this" on the low-energy version completes the step without completing the whole task', async () => {
+    seedTask();
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    await screen.findByText('Low-energy version');
+    fireEvent.click(screen.getByRole('button', { name: 'I did this' }));
+    await screen.findByText(/That step is done/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await screen.findByText('My plan');
+    expect(screen.getByRole('button', { name: 'Mark Draft chapter 2 as done' })).toBeInTheDocument();
+  });
+
+  it('removes the old redundant "Start activity" disclosure entirely', async () => {
+    seedTask();
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    await screen.findByText('The 2-minute start');
+    expect(screen.queryByText('Start activity')).not.toBeInTheDocument();
+  });
+});

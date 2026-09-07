@@ -6,7 +6,7 @@ import { auth, deleteAccount, firebaseEnabled, reauthenticate } from '@/lib/fire
 import { authErrorMessage } from '@/lib/authErrors';
 import { addTask, completeCurrentStep, defaultSettings, deleteAllData, deleteCheckinHistory, deleteCompletedTasks, exportAllData, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveReflection, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
 import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
-import { recommendAction } from '@/lib/recommendation';
+import { pickPriorityTask, recommendAction } from '@/lib/recommendation';
 import { initialStepText, makeCustomStep, nextStepAfter, suggestAlternativeSteps, TASK_TYPES } from '@/lib/steps';
 import { buildPatternInsights, orderByUsage } from '@/lib/patterns';
 import { explainPressure } from '@/lib/explain';
@@ -21,12 +21,6 @@ const questions = [
   { id: 'focus', title: 'How easy is it to focus right now?', max: 5, low: 'Hard to focus', high: 'Easy to focus' },
   { id: 'initiation', title: 'How easy is it to start tasks today?', max: 5, low: 'Hard to start', high: 'Easy to start' },
   { id: 'confidence', title: 'How confident do you feel about this week?', max: 5, low: 'Not confident', high: 'Confident' },
-];
-const activities = [
-  ['The 2-minute start', "Don't finish the task. Open it and identify only the first action."],
-  ['Shrink the assignment', 'Turn "Write introduction" into "Write one sentence explaining the topic."'],
-  ['Low-energy version', "Choose the smallest useful version of today's task."],
-  ['Restart after getting stuck', '1. Reopen the work. 2. Find your last completed point. 3. Choose one next action.'],
 ];
 const nav = [['today', Home, 'Today'], ['tasks', ListTodo, 'Tasks'], ['learn', BookOpen, 'Learn'], ['progress', TrendingUp, 'Progress'], ['support', Heart, 'Support']];
 const priorities = [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']];
@@ -222,7 +216,7 @@ export default function NuvoraApp() {
         {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} calmMode={settings.calmMode} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
-        {screen === 'learn' && <Learn calmMode={settings.calmMode} />}
+        {screen === 'learn' && <Learn calmMode={settings.calmMode} data={data} uid={user.uid} setData={setData} go={go} />}
         {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} go={go} />}
         {screen === 'reflection' && <Reflection uid={user.uid} data={data} setData={setData} go={go} />}
         {screen === 'support' && <Support data={data} />}
@@ -838,19 +832,98 @@ function FocusTimer({ seconds = 120 }) {
   </div>;
 }
 
-function Learn({ calmMode }) {
+function Learn({ calmMode, data, uid, setData, go }) {
   const [showAll, setShowAll] = useState(false);
-  const visibleActivities = calmMode && !showAll ? activities.slice(0, 1) : activities;
+  const [busy, setBusy] = useState(false);
+  const [shrinkStatus, setShrinkStatus] = useState({ text: '', tone: 'status' });
+  const [lowEnergyStatus, setLowEnergyStatus] = useState({ text: '', tone: 'status' });
+  const task = pickPriorityTask(data.tasks);
+
+  async function useShrunkStep() {
+    if (!task || busy) return;
+    setBusy(true);
+    setShrinkStatus({ text: '', tone: 'status' });
+    try {
+      const shrunk = makeCustomStep(task, `Write one sentence about ${task.title}.`);
+      const updated = await setCurrentStep(uid, task.id, shrunk);
+      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
+      setShrinkStatus({ text: 'Saved as your next step for this task.', tone: 'status' });
+    } catch {
+      setShrinkStatus({ text: GENERIC_ERROR, tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markLowEnergyDone() {
+    if (!task || busy) return;
+    setBusy(true);
+    setLowEnergyStatus({ text: '', tone: 'status' });
+    try {
+      const updated = await completeCurrentStep(uid, task.id, true);
+      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
+      await recordStepCompleted(uid).catch(() => {});
+      setLowEnergyStatus({ text: 'Saved. That step is done — the assignment stays open.', tone: 'status' });
+    } catch {
+      setLowEnergyStatus({ text: GENERIC_ERROR, tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Each activity is tied to the same "one small next step" task Today
+  // recommends, where there is one — not a generic example disconnected
+  // from the student's real work. With no open tasks, each falls back to
+  // the original generic wording rather than referencing nothing.
+  const allActivities = [
+    {
+      title: 'The 2-minute start', badge: '2–3 MIN · RECOMMENDED',
+      body: <>
+        <p>{task ? `Don't finish "${task.title}". Open it and identify only the first action.` : "Don't finish the task. Open it and identify only the first action."}</p>
+        <FocusTimer seconds={120} />
+      </>,
+    },
+    {
+      title: 'Shrink the assignment', badge: '2–5 MIN',
+      body: <>
+        <p>{task ? `Turn "${task.title}" into: "Write one sentence about ${task.title}."` : 'Turn "Write introduction" into "Write one sentence explaining the topic."'}</p>
+        <FocusTimer seconds={120} />
+        {task && <div className="row">
+          <button className="option" disabled={busy} onClick={useShrunkStep}>Use this as my next step</button>
+        </div>}
+        <StatusMessage text={shrinkStatus.text} tone={shrinkStatus.tone} />
+      </>,
+    },
+    {
+      title: 'Low-energy version', badge: '2–5 MIN',
+      body: <>
+        <p>{task ? `The low-energy version of "${task.title}" is just: "${task.currentStep?.text}"` : "Choose the smallest useful version of today's task."}</p>
+        <FocusTimer seconds={120} />
+        {task && !task.currentStep?.done && <div className="row">
+          <button className="option" disabled={busy} onClick={markLowEnergyDone}>I did this</button>
+        </div>}
+        <StatusMessage text={lowEnergyStatus.text} tone={lowEnergyStatus.tone} />
+      </>,
+    },
+    {
+      title: 'Restart after getting stuck', badge: '2–5 MIN',
+      body: <>
+        <p>1. Reopen the work. 2. Find your last completed point. 3. Choose one next action.</p>
+        <FocusTimer seconds={120} />
+        {task && <div className="row">
+          <button className="option" onClick={() => go('tasks')}>Open &ldquo;{task.title}&rdquo; in my plan</button>
+        </div>}
+      </>,
+    },
+  ];
+  const visibleActivities = calmMode && !showAll ? allActivities.slice(0, 1) : allActivities;
+
   return <>
     <div className="page-title"><h1>Small resets</h1><Leaf /></div>
     <p>Small, immediate actions — not long articles. Choose only what feels useful.</p>
-    {visibleActivities.map(([title, text], i) => <article className="activity" key={title}>
+    {visibleActivities.map((a, i) => <article className="activity" key={a.title}>
       <div>{i + 1}</div>
-      <section><small>{i === 0 ? '2–3 MIN · RECOMMENDED' : '2–5 MIN'}</small><h2>{title}</h2><p>{text}</p>
-        <details><summary>Start activity</summary><div className="activity-step">{text}<br /><br />Stopping after this is completely okay.
-          {title === 'The 2-minute start' && <FocusTimer seconds={120} />}
-        </div></details>
-      </section>
+      <section><small>{a.badge}</small><h2>{a.title}</h2>{a.body}</section>
     </article>)}
     {calmMode && !showAll
       ? <button className="link" onClick={() => setShowAll(true)}>Show other small resets</button>
