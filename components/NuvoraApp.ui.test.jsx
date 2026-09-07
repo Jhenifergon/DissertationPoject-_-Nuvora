@@ -249,3 +249,81 @@ describe('Calm Mode extends beyond Today (Tasks, Learn, Progress)', () => {
     expect(screen.getByText('A visible step preview')).toBeInTheDocument();
   });
 });
+
+describe('task-type step templates', () => {
+  it('a new essay-type task gets the essay progression\'s first step, not the generic one', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await screen.findByText('My plan');
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+    fireEvent.change(await screen.findByLabelText('Task name'), { target: { value: 'My essay' } });
+    fireEvent.change(screen.getByLabelText('Task type'), { target: { value: 'essay' } });
+    const buttons = screen.getAllByRole('button', { name: 'Add task' });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await screen.findByText('My essay');
+
+    expect(screen.getByText('Open a blank document and write only the title.')).toBeInTheDocument();
+  });
+});
+
+describe('pattern insights on Progress', () => {
+  it('shows a Patterns panel once there is enough check-in history to say something meaningful', async () => {
+    const now = new Date();
+    const daysAgo = n => { const d = new Date(now); d.setDate(d.getDate() - n); return d.toISOString(); };
+    const heavy = { workload: 20, taskInitiation: 90, focus: 20, rest: 20, confidence: 20 };
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [],
+      checkins: [0, 1, 2, 3].map(i => ({ id: `c${i}`, risk: { score: 50, factors: heavy, band: 'Moderate', message: 'x' }, createdAt: daysAgo(i) })),
+      reflections: [], settings: {}, stats: { stepsCompleted: 0, strategyUses: {} },
+    }));
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    await screen.findByText('Progress, without pressure');
+
+    expect(screen.getByText(/Task initiation has been your largest contributor/)).toBeInTheDocument();
+  });
+
+  it('shows no Patterns panel at all with too little history (never overclaims from noise)', async () => {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [], checkins: [], reflections: [], settings: {}, stats: { stepsCompleted: 0, strategyUses: {} },
+    }));
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    await screen.findByText('Progress, without pressure');
+
+    expect(screen.queryByText('Patterns')).not.toBeInTheDocument();
+  });
+});
+
+describe('barrier-history-aware Overwhelmed Mode ordering', () => {
+  it('puts the most-used barrier first instead of the fixed default order', async () => {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [{ id: 't1', title: 'A task', module: 'Other', due: '', priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'x', done: false, completedAt: null } }],
+      checkins: [], reflections: [], settings: {},
+      stats: { stepsCompleted: 0, strategyUses: { start: 0, big: 0, energy: 0, reset: 8, support: 0 } },
+    }));
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByText('I’m feeling overwhelmed'));
+    const group = await screen.findByRole('radiogroup', { name: 'What is making this difficult right now?' });
+    const options = within(group).getAllByRole('radio');
+    expect(options[0]).toHaveTextContent('I need a short reset');
+  });
+
+  it('keeps the original default order when there is no usage history', async () => {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [{ id: 't1', title: 'A task', module: 'Other', due: '', priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'x', done: false, completedAt: null } }],
+      checkins: [], reflections: [], settings: {},
+      stats: { stepsCompleted: 0, strategyUses: {} },
+    }));
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByText('I’m feeling overwhelmed'));
+    const group = await screen.findByRole('radiogroup', { name: 'What is making this difficult right now?' });
+    const options = within(group).getAllByRole('radio');
+    expect(options[0]).toHaveTextContent('I do not know where to start');
+  });
+});

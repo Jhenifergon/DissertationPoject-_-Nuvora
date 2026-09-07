@@ -7,7 +7,8 @@ import { authErrorMessage } from '@/lib/authErrors';
 import { addTask, completeCurrentStep, defaultSettings, deleteAllData, deleteCheckinHistory, deleteCompletedTasks, exportAllData, loadData, recordStepCompleted, recordStrategyUse, removeTask, saveCheckin, saveReflection, saveSettings, setCurrentStep, toggleTask, updateTask } from '@/lib/store';
 import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
 import { recommendAction } from '@/lib/recommendation';
-import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
+import { initialStepText, makeCustomStep, nextStepAfter, suggestAlternativeSteps, TASK_TYPES } from '@/lib/steps';
+import { buildPatternInsights, orderByUsage } from '@/lib/patterns';
 import { explainPressure } from '@/lib/explain';
 import { combineWorkloadPressure } from '@/lib/pressure';
 import { avatarInitial, displayNameOrFallback, timeOfDayGreeting } from '@/lib/greeting';
@@ -514,7 +515,7 @@ function TaskForm({ initial, tasks, onCancel, onSave, saving }) {
   return <form className="panel" onSubmit={e => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    onSave({ title: f.get('title'), module, due: f.get('due'), priority: f.get('priority') });
+    onSave({ title: f.get('title'), module, due: f.get('due'), priority: f.get('priority'), taskType: f.get('taskType') });
   }}>
     <label>Task name<input name="title" defaultValue={initial?.title} required autoFocus /></label>
     <div>
@@ -529,7 +530,8 @@ function TaskForm({ initial, tasks, onCancel, onSave, saving }) {
     </div>
     <label>Due date<input name="due" type="date" defaultValue={initial?.due} /></label>
     <label>Priority<select name="priority" defaultValue={initial?.priority || 'normal'}>{priorities.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-    {!initial && <p className="hint">Nuvora will create a small first step automatically.</p>}
+    <label>Task type<select name="taskType" defaultValue={initial?.taskType || 'general'}>{TASK_TYPES.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select></label>
+    {!initial && <p className="hint">Nuvora will suggest a small first step based on the task type.</p>}
     <div className="row">
       <button type="button" onClick={onCancel} disabled={saving}>Cancel</button>
       <button className="primary" disabled={saving || !module.trim()}>{saving ? 'Saving…' : (initial ? 'Save changes' : 'Add task')}</button>
@@ -555,9 +557,10 @@ function Tasks({ data, uid, setData, calmMode }) {
       module: fields.module,
       due: fields.due,
       priority: fields.priority,
+      taskType: fields.taskType || 'general',
       bucket: tab,
       done: false,
-      currentStep: { id: crypto.randomUUID(), text: `Open ${fields.title} and write down one small first action.`, done: false, completedAt: null },
+      currentStep: { id: crypto.randomUUID(), text: initialStepText(fields.taskType), done: false, completedAt: null },
     };
     setSaving(true);
     setError('');
@@ -875,7 +878,13 @@ function Progress({ data, settings, updateSettings, settingsBusy, go }) {
     </>;
   }
 
+  const patternInsights = buildPatternInsights(data.checkins);
+
   const trendsAndStrategies = <>
+    {patternInsights.length > 0 && <div className="panel">
+      <h2>Patterns</h2>
+      {patternInsights.map((line, i) => <p key={i}>{line}</p>)}
+    </div>}
     {usedStrategies.length > 0 && <div className="panel">
       <h2>Helpful strategies</h2>
       {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{n}</b></div>)}
@@ -1219,6 +1228,11 @@ function Overwhelmed({ data, uid, setData, go, settings }) {
   const task = data.tasks.find(t => !t.done);
   const barrierRef = useRef(null);
   const doneHeadingRef = useRef(null);
+  // Puts whichever barrier this student has actually found helpful before
+  // first — reducing decision friction at exactly the moment
+  // decision-making is hardest. A stable sort means a student with no
+  // history yet sees the same order as always, not something arbitrary.
+  const orderedBarriers = orderByUsage(BARRIERS, data.stats.strategyUses);
 
   useEffect(() => {
     if (done) doneHeadingRef.current?.focus();
@@ -1273,8 +1287,8 @@ function Overwhelmed({ data, uid, setData, go, settings }) {
     <Mascot size={80} mood="worried" /><small>OVERWHELMED MODE</small>
     <h1>Let’s make everything smaller.</h1>
     <p>What is making this difficult right now?</p>
-    <div ref={barrierRef} className="scale-vertical" role="radiogroup" aria-label="What is making this difficult right now?" onKeyDown={e => handleRadiogroupKeyDown(e, barrierRef, BARRIERS.map(b => b.id), barrier, id => { setBarrier(id); setChosenAlt(null); })}>
-      {BARRIERS.map((b, i) => (
+    <div ref={barrierRef} className="scale-vertical" role="radiogroup" aria-label="What is making this difficult right now?" onKeyDown={e => handleRadiogroupKeyDown(e, barrierRef, orderedBarriers.map(b => b.id), barrier, id => { setBarrier(id); setChosenAlt(null); })}>
+      {orderedBarriers.map((b, i) => (
         <button key={b.id} role="radio" aria-checked={barrier === b.id} data-value={b.id} tabIndex={barrier === b.id || (barrier === null && i === 0) ? 0 : -1} className={`option ${barrier === b.id ? 'selected' : ''}`} onClick={() => { setBarrier(b.id); setChosenAlt(null); }}>{b.label}</button>
       ))}
     </div>
