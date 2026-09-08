@@ -12,11 +12,15 @@ import { buildPatternInsights, orderByUsage } from '@/lib/patterns';
 import { explainPressure } from '@/lib/explain';
 import { combineWorkloadPressure } from '@/lib/pressure';
 import { avatarInitial, displayNameOrFallback, timeOfDayGreeting } from '@/lib/greeting';
-import { availableModules } from '@/lib/modules';
+import { availableModules, moduleColor } from '@/lib/modules';
 import { formatSeconds } from '@/lib/timer';
 
 const questions = [
-  { id: 'mood', title: 'How is your workload feeling today?', max: 4, low: 'Calm', high: 'Very overwhelming' },
+  // The first question is conceptually different from the four 1-5 scales
+  // that follow it, so it's asked with plain descriptive options instead of
+  // bare numbers — but the value each option saves (1-4) is unchanged, so
+  // the underlying workload-pressure weighting in lib/risk.js is untouched.
+  { id: 'mood', title: 'How is your workload feeling today?', max: 4, low: 'Calm', high: 'Very overwhelming', options: ['Calm & in control', 'Manageable', 'Heavier than usual', 'Very overwhelming'] },
   { id: 'sleep', title: 'How rested do you feel?', max: 5, low: 'Low energy', high: 'Well rested' },
   { id: 'focus', title: 'How easy is it to focus right now?', max: 5, low: 'Hard to focus', high: 'Easy to focus' },
   { id: 'initiation', title: 'How easy is it to start tasks today?', max: 5, low: 'Hard to start', high: 'Easy to start' },
@@ -31,6 +35,7 @@ const BARRIERS = [
   { id: 'reset', label: 'I need a short reset' },
   { id: 'support', label: 'I need to ask someone for help' },
 ];
+const QUICK_RESET = { title: 'A 2-minute breathing reset', text: 'Slow your breathing for two minutes — in for four counts, out for six. There is nothing else to do right now.' };
 const GENERIC_ERROR = 'That did not save. Please try again in a moment.';
 
 // Gives custom role="radio" groups the arrow-key behaviour native radio
@@ -199,7 +204,7 @@ export default function NuvoraApp() {
       <header>
         <button className="icon" ref={menuButtonRef} onClick={() => setMenu(true)} aria-label="Open menu"><Menu /></button>
         <Logo />
-        <button className="calm-toggle" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, calmMode: !settings.calmMode })}>
+        <button className={`calm-toggle${settings.calmMode ? ' on' : ''}`} disabled={settingsBusy} onClick={() => updateSettings({ ...settings, calmMode: !settings.calmMode })}>
           <Leaf /> {settings.calmMode ? 'Calm on' : 'Calm'}
         </button>
       </header>
@@ -212,14 +217,14 @@ export default function NuvoraApp() {
         <button onClick={() => (firebaseEnabled ? signOut(auth) : location.reload())}><LogOut /> Sign out</button>
         <p>Nuvora provides academic support, not medical advice or diagnosis.</p>
       </Drawer>
-      <div className="content">
+      <div className={`content${screen === 'overwhelmed' ? ' overwhelmed-bg' : ''}`}>
         {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} calmMode={settings.calmMode} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn calmMode={settings.calmMode} data={data} uid={user.uid} setData={setData} go={go} />}
         {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} go={go} />}
         {screen === 'reflection' && <Reflection uid={user.uid} data={data} setData={setData} go={go} />}
-        {screen === 'support' && <Support data={data} />}
+        {screen === 'support' && <Support data={data} settings={settings} go={go} />}
         {screen === 'settings' && <SettingsPage value={settings} busy={settingsBusy} error={settingsError} onChange={updateSettings} go={go} />}
         {screen === 'privacy' && <Privacy uid={user.uid} data={data} setData={setData} updateSettings={updateSettings} go={go} />}
         {screen === 'overwhelmed' && <Overwhelmed data={data} uid={user.uid} setData={setData} go={go} settings={settings} />}
@@ -417,9 +422,9 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy 
 function RiskCard({ risk, tasks }) {
   const explanation = explainPressure(risk, tasks);
   return <article className={`risk ${risk.band.toLowerCase()}`}>
+    <div className="score" aria-hidden="true">{risk.score}</div>
     <div>
-      <small>WORKLOAD PRESSURE</small>
-      <h2>{risk.band} pressure</h2>
+      <h3>Workload pressure · {risk.band}</h3>
       <p>{risk.message}</p>
       <details>
         <summary>Why this result?</summary>
@@ -463,7 +468,7 @@ function FocusTask({ task, actionText, uid, setData }) {
   }
 
   return <article className="task focus">
-    <div className="module">{task.module}</div>
+    <div className="module" data-color={moduleColor(task.module)}>{task.module}</div>
     <h3>{task.title}</h3>
     <small className="due-label">{relativeDueLabel(task.due)}</small>
 
@@ -516,7 +521,7 @@ function TaskForm({ initial, tasks, onCancel, onSave, saving }) {
       <div className="hint">Module</div>
       <div className="module-chips">
         {chips.filter(c => c !== 'Other').map(m => (
-          <button key={m} type="button" className={`module-chip ${module === m ? 'selected' : ''}`} onClick={() => { setModule(m); setAddingModule(false); }}>{m}</button>
+          <button key={m} type="button" data-color={moduleColor(m)} className={`module-chip ${module === m ? 'selected' : ''}`} onClick={() => { setModule(m); setAddingModule(false); }}>{m}</button>
         ))}
         <button type="button" className={`module-chip ${addingModule ? 'selected' : ''}`} onClick={() => setAddingModule(true)}>+ New module</button>
       </div>
@@ -623,20 +628,19 @@ function Tasks({ data, uid, setData, calmMode }) {
     });
   }
 
+  const editingTask = editingId ? data.tasks.find(t => t.id === editingId) : null;
+
   return <>
     <div className="page-title"><h1>My plan</h1><button className="icon filled" onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button></div>
     {calmMode && !showAllTabs
       ? <button className="link" onClick={() => setShowAllTabs(true)}>Show week &amp; later</button>
       : <div className="tabs">{['today', 'week', 'later'].map(t => <button className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t}</button>)}</div>}
-    {adding && <TaskForm tasks={data.tasks} saving={saving} onCancel={() => setAdding(false)} onSave={create} />}
     <StatusMessage text={error} tone="error" />
     {undo && <div className="status-msg status" role="status">
       “{undo.title}” marked complete. <button className="link" onClick={undoComplete}>Undo</button>
     </div>}
-    {filtered.map(t => t.id === editingId ? (
-      <TaskForm key={t.id} initial={t} tasks={data.tasks} saving={saving} onCancel={() => setEditingId(null)} onSave={fields => saveEdit(t.id, fields)} />
-    ) : (
-      <article className={`task row-task ${t.done ? 'done' : ''}`} key={t.id}>
+    {filtered.map(t => (
+      <article className={`task row-task ${t.done ? 'done' : ''}`} data-color={moduleColor(t.module)} key={t.id}>
         <button className="check" aria-label={t.done ? `Mark ${t.title} as not done` : `Mark ${t.title} as done`} aria-pressed={t.done} disabled={busyIds.has(t.id)} onClick={() => toggle(t)}>
           <span className="check-dot">{t.done && <Check />}</span>
         </button>
@@ -649,7 +653,19 @@ function Tasks({ data, uid, setData, calmMode }) {
         <button className="icon trash" aria-label={`Delete ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => remove(t)}><Trash2 /></button>
       </article>
     ))}
-    {!filtered.length && !adding && <Empty title="Nothing here yet" text="Add one task when you are ready." />}
+    {!filtered.length && !adding && !editingId && <Empty title="Nothing here yet" text="Add one task when you are ready." />}
+    {/* Add/edit opens as a focused overlay panel rather than sitting
+        permanently inline in the list — the list itself never re-renders
+        into a form. */}
+    {(adding || editingTask) && <div className="sheet-backdrop" aria-hidden="true" onClick={() => { setAdding(false); setEditingId(null); }} />}
+    {adding && <div className="sheet" role="dialog" aria-modal="true" aria-label="Add task">
+      <div className="sheet-header"><span className="sheet-title">Add task</span></div>
+      <TaskForm tasks={data.tasks} saving={saving} onCancel={() => setAdding(false)} onSave={create} />
+    </div>}
+    {editingTask && <div className="sheet" role="dialog" aria-modal="true" aria-label={`Edit ${editingTask.title}`}>
+      <div className="sheet-header"><span className="sheet-title">Edit task</span></div>
+      <TaskForm initial={editingTask} tasks={data.tasks} saving={saving} onCancel={() => setEditingId(null)} onSave={fields => saveEdit(editingTask.id, fields)} />
+    </div>}
   </>;
 }
 
@@ -754,12 +770,20 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
     <small>QUESTION {step + 1} OF {questions.length}</small>
     <h1>{q.title}</h1>
     <div ref={scaleRef} role="radiogroup" aria-label={q.title} onKeyDown={e => handleRadiogroupKeyDown(e, scaleRef, [...Array.from({ length: q.max }, (_, i) => i + 1), 'unsure'], answers[q.id], setAnswer)}>
-      <div className="scale">
-        {Array.from({ length: q.max }, (_, i) => i + 1).map(n => (
-          <button key={n} role="radio" aria-checked={answers[q.id] === n} data-value={n} tabIndex={answers[q.id] === n || (answers[q.id] === undefined && n === 1) ? 0 : -1} onClick={() => setAnswer(n)} className={answers[q.id] === n ? 'selected' : ''}>{n}</button>
-        ))}
-      </div>
-      <div className="scale-label"><span>{q.low}</span><span>{q.high}</span></div>
+      {q.options ? (
+        <div className="scale-vertical">
+          {q.options.map((label, i) => { const n = i + 1; return (
+            <button key={n} role="radio" aria-checked={answers[q.id] === n} data-value={n} tabIndex={answers[q.id] === n || (answers[q.id] === undefined && n === 1) ? 0 : -1} onClick={() => setAnswer(n)} className={`option ${answers[q.id] === n ? 'selected' : ''}`}>{label}</button>
+          ); })}
+        </div>
+      ) : <>
+        <div className="scale">
+          {Array.from({ length: q.max }, (_, i) => i + 1).map(n => (
+            <button key={n} role="radio" aria-checked={answers[q.id] === n} data-value={n} tabIndex={answers[q.id] === n || (answers[q.id] === undefined && n === 1) ? 0 : -1} onClick={() => setAnswer(n)} className={answers[q.id] === n ? 'selected' : ''}>{n}</button>
+          ))}
+        </div>
+        <div className="scale-label"><span>{q.low}</span><span>{q.high}</span></div>
+      </>}
       <button role="radio" aria-checked={answers[q.id] === 'unsure'} data-value="unsure" tabIndex={answers[q.id] === 'unsure' ? 0 : -1} className={`option not-sure ${answers[q.id] === 'unsure' ? 'selected' : ''}`} onClick={() => setAnswer('unsure')}>Not sure / prefer not to answer</button>
     </div>
     <StatusMessage text={error} tone="error" />
@@ -916,15 +940,35 @@ function Learn({ calmMode, data, uid, setData, go }) {
       </>,
     },
   ];
-  const visibleActivities = calmMode && !showAll ? allActivities.slice(0, 1) : allActivities;
+  // "Today's pick" is always the first, recommended activity — pulled out
+  // into its own highlighted card, fully expanded, rather than being one
+  // more item in a long list. Everything else stays collapsed by default
+  // (progressive disclosure) so the page reads as a short menu of choices,
+  // not a wall of instructions to scan through.
+  const [pick, ...rest] = allActivities;
+  const ACTIVITY_COLORS = ['teal', 'amber', 'blue'];
+  const showRest = !calmMode || showAll;
 
   return <>
     <div className="page-title"><h1>Small resets</h1><Leaf /></div>
-    <p>Small, immediate actions — not long articles. Choose only what feels useful.</p>
-    {visibleActivities.map((a, i) => <article className="activity" key={a.title}>
-      <div>{i + 1}</div>
-      <section><small>{a.badge}</small><h2>{a.title}</h2>{a.body}</section>
-    </article>)}
+    <p>Short, focused activities for difficult moments. Choose only what feels useful.</p>
+
+    <div className="pick-card">
+      <div className="pick-label"><span>TODAY'S PICK</span></div>
+      <h2 style={{ margin: 0 }}>{pick.title}</h2>
+      {pick.body}
+    </div>
+
+    {showRest && <>
+      <div className="all-activities-label">ALL ACTIVITIES</div>
+      {rest.map((a, i) => <article className="activity" data-color={ACTIVITY_COLORS[i % ACTIVITY_COLORS.length]} key={a.title}>
+        <div>{i + 2}</div>
+        <details>
+          <summary><small>{a.badge}</small><h2>{a.title}</h2></summary>
+          <section>{a.body}</section>
+        </details>
+      </article>)}
+    </>}
     {calmMode && !showAll
       ? <button className="link" onClick={() => setShowAll(true)}>Show other small resets</button>
       : <article className="panel">
@@ -1217,7 +1261,7 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
   </>;
 }
 
-function Support({ data }) {
+function Support({ data, settings, go }) {
   const risk = data.checkins[0]?.risk;
   const [status, setStatus] = useState({ text: '', tone: 'status' });
   const explanation = risk ? explainPressure(risk, data.tasks) : [];
@@ -1247,10 +1291,30 @@ function Support({ data }) {
     <div className="page-title"><h1>Support</h1><Heart /></div>
     <article className="support-card">
       <h2>A summary you control</h2>
+      <p>Nuvora can create a short summary based on your check-ins and tasks. Nothing is sent automatically — you choose whether and how to share it.</p>
       <p style={{ whiteSpace: 'pre-line' }}>{risk ? summary : 'Complete a check-in to prepare a short support summary.'}</p>
       <button className="primary" disabled={!risk} onClick={copy}>Copy summary</button>
       <StatusMessage text={status.text} tone={status.tone} />
     </article>
+
+    <div className="panel" style={{ padding: 6 }}>
+      <button onClick={() => go('settings')} style={{ width: '100%', padding: '14px 12px', border: 0, background: 'none', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, color: 'var(--ink)' }}>
+        Calm accessibility settings <span className="hint" style={{ color: 'var(--nuvora-purple-dark)' }}>›</span>
+      </button>
+      <div style={{ height: 1, background: 'var(--nuvora-line-soft)' }} />
+      {settings?.supportPersonName
+        ? <button onClick={() => go('settings')} style={{ width: '100%', padding: '14px 12px', border: 0, background: 'none', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, color: 'var(--ink)' }}>
+          Support person <span className="hint" style={{ color: 'var(--muted)' }}>{settings.supportPersonName} ›</span>
+        </button>
+        : <button onClick={() => go('settings')} style={{ width: '100%', padding: '14px 12px', border: 0, background: 'none', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, color: 'var(--ink)' }}>
+          Support person <span className="hint" style={{ color: 'var(--muted)' }}>Not set ›</span>
+        </button>}
+      <div style={{ height: 1, background: 'var(--nuvora-line-soft)' }} />
+      <button onClick={() => go('privacy')} style={{ width: '100%', padding: '14px 12px', border: 0, background: 'none', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, color: 'var(--ink)' }}>
+        Privacy &amp; data <span className="hint" style={{ color: 'var(--nuvora-purple-dark)' }}>›</span>
+      </button>
+    </div>
+
     <article className="notice">
       <CircleHelp />
       <div><b>Need urgent help?</b><p>Nuvora is not an emergency or healthcare service. Contact your university support service, NHS 111, or emergency services when appropriate.</p></div>
@@ -1285,7 +1349,7 @@ function SettingsPage({ value, busy, error, onChange, go }) {
   </>;
 }
 function Setting({ label, text, checked, disabled, onChange }) {
-  return <label className="setting"><div><b>{label}</b><p>{text}</p></div><input type="checkbox" checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)} /></label>;
+  return <label className="setting"><div><b>{label}</b><p>{text}</p></div><input type="checkbox" role="switch" className="switch" checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)} /></label>;
 }
 
 // --- Overwhelmed Mode (barrier-based) ---------------------------------------
@@ -1387,8 +1451,8 @@ function Overwhelmed({ data, uid, setData, go, settings }) {
     </article>}
 
     {barrier === 'reset' && <article><small>ONE BRIEF RESET</small>
-      <h2>{activities[0][0]}</h2>
-      <p>{activities[0][1]}</p>
+      <h2>{QUICK_RESET.title}</h2>
+      <p>{QUICK_RESET.text}</p>
       <button className="primary" onClick={continueAfterReset}>I’m ready to continue</button>
     </article>}
 

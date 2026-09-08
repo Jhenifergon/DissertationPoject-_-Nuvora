@@ -38,10 +38,16 @@ afterEach(() => {
 });
 
 async function answerCheckin(answers) {
-  // answers: array of 5 numbers for mood, sleep, focus, initiation, confidence
+  // answers: array of 5 numbers (1-based option position, low to high) for
+  // mood, sleep, focus, initiation, confidence. Selecting by position
+  // rather than by visible label works whether a question renders as a
+  // numbered scale or (like the first, "workload feeling" question)
+  // descriptive text options — both render one radio per option, in order,
+  // followed by "Not sure".
   for (const value of answers) {
     const group = await screen.findByRole('radiogroup');
-    fireEvent.click(within(group).getByRole('radio', { name: String(value) }));
+    const radios = within(group).getAllByRole('radio');
+    fireEvent.click(radios[value - 1]);
     fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
   }
 }
@@ -66,6 +72,29 @@ function tomorrowIso() {
   d.setDate(d.getDate() + 1);
   return d.toISOString().slice(0, 10);
 }
+
+describe('check-in first question uses descriptive options', () => {
+  it('shows plain-language workload options instead of bare numbers, and they score exactly as the old 1-4 scale did', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByText('Check in when it would help'));
+
+    const group = await screen.findByRole('radiogroup', { name: 'How is your workload feeling today?' });
+    expect(within(group).getByRole('radio', { name: 'Calm & in control' })).toBeInTheDocument();
+    expect(within(group).getByRole('radio', { name: 'Manageable' })).toBeInTheDocument();
+    expect(within(group).getByRole('radio', { name: 'Heavier than usual' })).toBeInTheDocument();
+
+    // "Very overwhelming" is the 4th/highest option — same underlying value
+    // (4) the old numbered scale's last button saved.
+    fireEvent.click(within(group).getByRole('radio', { name: 'Very overwhelming' }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    await answerCheckin([3, 3, 3, 3]); // sleep, focus, initiation, confidence — mid-scale
+
+    await screen.findByText('Moderate pressure');
+    fireEvent.click(screen.getByText('Why this result?'));
+    expect(screen.getByText('Workload feeling was the largest contributor today.')).toBeInTheDocument();
+  });
+});
 
 describe('end-to-end journeys', () => {
   it('journeys 1-8: demo mode -> add task -> check-in -> explanation -> next action -> Overwhelmed Mode -> micro-step -> assignment stays open', async () => {

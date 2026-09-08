@@ -74,7 +74,9 @@ describe('error handling', () => {
     const group = await screen.findByRole('radiogroup');
     for (let i = 0; i < 5; i++) {
       const g = await screen.findByRole('radiogroup');
-      fireEvent.click(within(g).getByRole('radio', { name: '3' }));
+      // Third option in whatever form this step renders (a numbered scale,
+      // or the first question's descriptive text options).
+      fireEvent.click(within(g).getAllByRole('radio')[2]);
       fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
     }
 
@@ -325,6 +327,19 @@ describe('barrier-history-aware Overwhelmed Mode ordering', () => {
     const group = await screen.findByRole('radiogroup', { name: 'What is making this difficult right now?' });
     const options = within(group).getAllByRole('radio');
     expect(options[0]).toHaveTextContent('I do not know where to start');
+  });
+});
+
+describe('Overwhelmed Mode barrier panels', () => {
+  it('the "I need a short reset" barrier renders a real reset instead of crashing', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByText('I’m feeling overwhelmed'));
+    fireEvent.click(screen.getByText('I need a short reset'));
+
+    expect(screen.getByText('A 2-minute breathing reset')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'I’m ready to continue' }));
+    await screen.findByText('How are things feeling, there?');
   });
 });
 
