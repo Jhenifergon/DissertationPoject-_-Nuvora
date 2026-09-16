@@ -107,6 +107,61 @@ function Drawer({ open, onClose, triggerRef, children }) {
   </>;
 }
 
+// Reusable modal sheet with complete keyboard focus management. This mirrors
+// the accessible menu drawer behaviour: focus enters the dialog when it opens,
+// Tab/Shift+Tab stay inside it, Escape closes it, and focus returns to the
+// control that opened it.
+function AccessibleSheet({ label, onClose, triggerRef, children }) {
+  const sheetRef = useRef(null);
+
+  useEffect(() => {
+    const triggerEl = triggerRef.current;
+    const sheet = sheetRef.current;
+    if (!sheet) return undefined;
+
+    const focusableSelector = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const initialTarget = sheet.querySelector('[autofocus]') || sheet.querySelector(focusableSelector);
+    initialTarget?.focus();
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (e.key !== 'Tab' || !sheetRef.current) return;
+
+      const focusable = Array.from(sheetRef.current.querySelectorAll(focusableSelector));
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      triggerEl?.focus();
+    };
+  }, [onClose, triggerRef]);
+
+  return <>
+    <div className="sheet-backdrop" aria-hidden="true" onClick={onClose} />
+    <div className="sheet" role="dialog" aria-modal="true" aria-label={label} ref={sheetRef}>
+      {children}
+    </div>
+  </>;
+}
+
 export default function NuvoraApp() {
   const [user, setUser] = useState(firebaseEnabled ? undefined : { uid: 'demo', email: 'demo@nuvora.local' });
   const [screen, setScreen] = useState('today');
@@ -548,6 +603,8 @@ function Tasks({ data, uid, setData, calmMode }) {
   const [error, setError] = useState('');
   const [undo, setUndo] = useState(null); // { id, title }
   const [showAllTabs, setShowAllTabs] = useState(false);
+  const addTaskTriggerRef = useRef(null);
+  const editTaskTriggerRef = useRef(null);
   const filtered = data.tasks.filter(t => effectiveBucket(t) === tab);
 
   async function create(fields) {
@@ -632,7 +689,7 @@ function Tasks({ data, uid, setData, calmMode }) {
   const editingTask = editingId ? data.tasks.find(t => t.id === editingId) : null;
 
   return <>
-    <div className="page-title"><h1>My plan</h1><button className="icon filled" onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button></div>
+    <div className="page-title"><h1>My plan</h1><button className="icon filled" ref={addTaskTriggerRef} onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button></div>
     {calmMode && !showAllTabs
       ? <button className="link" onClick={() => setShowAllTabs(true)}>Show week &amp; later</button>
       : <div className="tabs">{['today', 'week', 'later'].map(t => <button className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t}</button>)}</div>}
@@ -650,7 +707,7 @@ function Tasks({ data, uid, setData, calmMode }) {
           <h2>{t.title}</h2>
           {!calmMode && <p>{t.currentStep?.text}</p>}
         </div>
-        <button className="icon" aria-label={`Edit ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => setEditingId(t.id)}><Pencil /></button>
+        <button className="icon" aria-label={`Edit ${t.title}`} disabled={busyIds.has(t.id)} onClick={e => { editTaskTriggerRef.current = e.currentTarget; setEditingId(t.id); }}><Pencil /></button>
         <button className="icon trash" aria-label={`Delete ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => remove(t)}><Trash2 /></button>
       </article>
     ))}
@@ -658,15 +715,14 @@ function Tasks({ data, uid, setData, calmMode }) {
     {/* Add/edit opens as a focused overlay panel rather than sitting
         permanently inline in the list — the list itself never re-renders
         into a form. */}
-    {(adding || editingTask) && <div className="sheet-backdrop" aria-hidden="true" onClick={() => { setAdding(false); setEditingId(null); }} />}
-    {adding && <div className="sheet" role="dialog" aria-modal="true" aria-label="Add task">
+    {adding && <AccessibleSheet label="Add task" onClose={() => setAdding(false)} triggerRef={addTaskTriggerRef}>
       <div className="sheet-header"><span className="sheet-title">Add task</span></div>
       <TaskForm tasks={data.tasks} saving={saving} onCancel={() => setAdding(false)} onSave={create} />
-    </div>}
-    {editingTask && <div className="sheet" role="dialog" aria-modal="true" aria-label={`Edit ${editingTask.title}`}>
+    </AccessibleSheet>}
+    {editingTask && <AccessibleSheet label={`Edit ${editingTask.title}`} onClose={() => setEditingId(null)} triggerRef={editTaskTriggerRef}>
       <div className="sheet-header"><span className="sheet-title">Edit task</span></div>
       <TaskForm initial={editingTask} tasks={data.tasks} saving={saving} onCancel={() => setEditingId(null)} onSave={fields => saveEdit(editingTask.id, fields)} />
-    </div>}
+    </AccessibleSheet>}
   </>;
 }
 

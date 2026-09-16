@@ -206,6 +206,64 @@ describe('navigation: every screen reachable without the bottom nav must have a 
   }
 });
 
+
+describe('task modal keyboard accessibility', () => {
+  it('moves focus into Add task, traps Tab, closes on Escape, and returns focus to the trigger', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await screen.findByText('My plan');
+
+    const addButton = screen.getByRole('button', { name: 'Add task' });
+    addButton.focus();
+    fireEvent.click(addButton);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Add task' });
+    const taskName = within(dialog).getByLabelText('Task name');
+    expect(taskName).toHaveFocus();
+
+    const focusable = Array.from(dialog.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    last.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(first).toHaveFocus();
+
+    first.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add task' })).not.toBeInTheDocument());
+    expect(addButton).toHaveFocus();
+  });
+
+  it('returns focus to the specific Edit button that opened the dialog', async () => {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [{ id: 't1', title: 'Draft chapter 2', module: 'Dissertation', due: '', priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'Open the document.', done: false, completedAt: null } }],
+      checkins: [], reflections: [], settings: {}, stats: {},
+    }));
+
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+    await screen.findByText('My plan');
+
+    const editButton = screen.getByRole('button', { name: 'Edit Draft chapter 2' });
+    editButton.focus();
+    fireEvent.click(editButton);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Draft chapter 2' });
+    expect(within(dialog).getByLabelText('Task name')).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit Draft chapter 2' })).not.toBeInTheDocument());
+    expect(editButton).toHaveFocus();
+  });
+});
+
 describe('Calm Mode extends beyond Today (Tasks, Learn, Progress)', () => {
   function seedRichState(calmMode) {
     const now = new Date();
