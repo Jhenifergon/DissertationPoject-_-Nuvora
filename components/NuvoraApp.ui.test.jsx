@@ -172,10 +172,23 @@ describe('offline banner', () => {
     expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument();
 
     fireEvent(window, new Event('offline'));
-    await screen.findByText(/You’re offline\. Some changes may take a little longer to sync\./);
+    await screen.findByText(/You’re offline\. Some saves may wait until you reconnect\. Keep this page open — offline data is not stored between browser sessions\./);
 
     fireEvent(window, new Event('online'));
     await waitFor(() => expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument());
+  });
+});
+
+describe('privacy: offline storage is explained clearly', () => {
+  it('explains that signed-in mode does not persist an offline browser cache by default', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    fireEvent.click(await screen.findByText('Privacy & data'));
+    await screen.findByRole('heading', { name: 'Privacy & data' });
+
+    fireEvent.click(screen.getByText('Offline storage'));
+    expect(screen.getByText(/Signed-in Firebase mode does not enable persistent browser caching by default/)).toBeInTheDocument();
   });
 });
 

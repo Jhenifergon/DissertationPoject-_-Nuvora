@@ -176,9 +176,12 @@ export default function NuvoraApp() {
   // within the same session does not lose what was already answered.
   const [checkinDraft, setCheckinDraft] = useState({ step: 0, answers: {} });
 
-  // A subtle offline notice — Firebase writes queue locally and sync once
-  // back online, but the student should know why things might feel slower
-  // rather than wondering if something's broken.
+  // A subtle offline notice. On the web, Nuvora intentionally keeps the
+  // default session-only Firestore cache rather than enabling persistent
+  // IndexedDB storage without the student's consent. That reduces the chance
+  // of check-in data remaining on a shared device after the browser session.
+  // While this page stays open, Firestore can still queue/cache work in memory,
+  // but an offline reload is not guaranteed to recover that session state.
   const [isOnline, setIsOnline] = useState(typeof navigator === 'undefined' || navigator.onLine !== false);
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -265,7 +268,7 @@ export default function NuvoraApp() {
         </button>
       </header>
       {settingsError && <div className="content" style={{ padding: '0 22px' }}><StatusMessage text={settingsError} tone="error" /></div>}
-      {!isOnline && <div className="content" style={{ padding: '0 22px' }}><p className="status-msg status" role="status">You’re offline. Some changes may take a little longer to sync.</p></div>}
+      {!isOnline && <div className="content" style={{ padding: '0 22px' }}><p className="status-msg status" role="status">You’re offline. Some saves may wait until you reconnect. Keep this page open — offline data is not stored between browser sessions.</p></div>}
       <Drawer open={menu} onClose={() => setMenu(false)} triggerRef={menuButtonRef}>
         <Logo />
         <button onClick={() => go('settings')}><Settings /> Accessibility settings</button>
@@ -1267,6 +1270,10 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
   return <>
     <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
     <div className="page-title"><h1>Privacy &amp; data</h1><Shield /></div>
+
+    <details className="panel"><summary>Offline storage</summary>
+      <p>Signed-in Firebase mode does not enable persistent browser caching by default. This reduces the chance of check-in data remaining on a shared device after the browser session. Demo mode stores its sample data locally in this browser.</p>
+    </details>
 
     <details className="panel"><summary>What Nuvora stores</summary>
       <p>Your tasks and their small steps, your daily check-in answers and the workload-pressure result calculated from them, any weekly reflections you write, your accessibility preferences, and a small count of how many steps you've completed and which support strategies you've used.</p>
