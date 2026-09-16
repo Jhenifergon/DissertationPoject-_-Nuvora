@@ -84,7 +84,7 @@ function Drawer({ open, onClose, triggerRef, children }) {
     function onKeyDown(e) {
       if (e.key === 'Escape') { onClose(); return; }
       if (e.key !== 'Tab' || !drawerRef.current) return;
-      const focusable = drawerRef.current.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      const focusable = drawerRef.current.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
       if (!focusable.length) return;
       const first = focusable[0], last = focusable[focusable.length - 1];
       if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -93,7 +93,7 @@ function Drawer({ open, onClose, triggerRef, children }) {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      triggerEl?.focus();
+      if (triggerEl?.isConnected) triggerEl.focus();
     };
   }, [open, onClose, triggerRef]);
 
@@ -150,7 +150,7 @@ function AccessibleSheet({ label, onClose, triggerRef, children }) {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      triggerEl?.focus();
+      if (triggerEl?.isConnected) triggerEl.focus();
     };
   }, [onClose, triggerRef]);
 
@@ -263,8 +263,15 @@ export default function NuvoraApp() {
       <header>
         <button className="icon" ref={menuButtonRef} onClick={() => setMenu(true)} aria-label="Open menu"><Menu /></button>
         <Logo />
-        <button className={`calm-toggle${settings.calmMode ? ' on' : ''}`} disabled={settingsBusy} onClick={() => updateSettings({ ...settings, calmMode: !settings.calmMode })}>
-          <Leaf /> {settings.calmMode ? 'Calm on' : 'Calm'}
+        <button
+          className={`calm-toggle${settings.calmMode ? ' on' : ''}`}
+          type="button"
+          aria-pressed={settings.calmMode}
+          aria-label={settings.calmMode ? 'Turn Calm Mode off' : 'Turn Calm Mode on'}
+          disabled={settingsBusy}
+          onClick={() => updateSettings({ ...settings, calmMode: !settings.calmMode })}
+        >
+          <Leaf aria-hidden="true" /> {settings.calmMode ? 'Calm on' : 'Calm'}
         </button>
       </header>
       {settingsError && <div className="content" style={{ padding: '0 22px' }}><StatusMessage text={settingsError} tone="error" /></div>}

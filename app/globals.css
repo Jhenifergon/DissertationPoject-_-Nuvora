@@ -346,3 +346,16 @@ details.panel h3 { font-size: .95em; margin: 0 0 6px; }
 .sheet .panel { box-shadow: none; border: none; padding: 0; margin: 0; }
 .sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 4px; }
 .sheet-header .sheet-title { font-weight: 800; font-size: .8em; letter-spacing: .05em; color: var(--nuvora-text-secondary); text-transform: uppercase; }
+
+
+/* Respect the student's operating-system motion preference even before they
+   change Nuvora's own Reduced Motion setting. The .reduced class below still
+   provides an explicit in-app override. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
