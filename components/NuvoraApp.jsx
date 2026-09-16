@@ -1368,7 +1368,7 @@ function Overwhelmed({ data, uid, setData, go, settings }) {
   const [copyStatus, setCopyStatus] = useState({ text: '', tone: 'status' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const task = data.tasks.find(t => !t.done);
+  const task = pickPriorityTask(data.tasks);
   const barrierRef = useRef(null);
   const doneHeadingRef = useRef(null);
   // Puts whichever barrier this student has actually found helpful before
