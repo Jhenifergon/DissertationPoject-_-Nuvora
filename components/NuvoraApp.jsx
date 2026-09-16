@@ -10,6 +10,7 @@ import { pickPriorityTask, recommendAction } from '@/lib/recommendation';
 import { initialStepText, makeCustomStep, nextStepAfter, suggestAlternativeSteps, TASK_TYPES } from '@/lib/steps';
 import { buildPatternInsights, orderByUsage } from '@/lib/patterns';
 import { explainPressure } from '@/lib/explain';
+import { calculatePressure } from '@/lib/risk';
 import { combineWorkloadPressure } from '@/lib/pressure';
 import { avatarInitial, displayNameOrFallback, timeOfDayGreeting } from '@/lib/greeting';
 import { availableModules, moduleColor } from '@/lib/modules';
@@ -721,21 +722,26 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
     setSubmitting(true);
     setError('');
     try {
-      const res = await fetch('/api/risk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(answers) });
-      const r = await res.json();
-      if (!res.ok || !r.band) {
-        setError(r.error || "We couldn't calculate a result from those answers. Please try again.");
-        return;
-      }
+      // Calculate the transparent rule-based pressure score locally rather
+      // than making an unnecessary request to /api/risk. This keeps the
+      // core scoring path available for offline/PWA/Capacitor use and avoids
+      // introducing a network failure point for a pure deterministic function.
+      const r = calculatePressure(answers);
+
       // The self-report score (r) is combined with the student's current
       // task deadlines here — see lib/pressure.js and the Phase 2 item 5
       // proposal for the full rule set, rationale, and scenario table.
       const combined = combineWorkloadPressure(r, data.tasks);
-      setRisk(combined);
+
+      // Persist the completed check-in before moving to the result screen.
+      // This prevents the UI from presenting a successful result as saved
+      // when Firestore has actually failed.
       await saveCheckin(uid, { answers, risk: combined });
       setData(d => ({ ...d, checkins: [{ answers, risk: combined, createdAt: new Date().toISOString() }, ...d.checkins] }));
-    } catch {
-      setError("We couldn't reach Nuvora just now. Your answers are still here — please try again.");
+      setRisk(combined);
+    } catch (err) {
+      console.error('Unable to complete check-in:', err);
+      setError("We couldn't save your check-in just now. Your answers are still here — please try again.");
     } finally {
       setSubmitting(false);
     }
