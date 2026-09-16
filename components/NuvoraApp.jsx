@@ -933,22 +933,37 @@ function Learn({ calmMode, data, uid, setData, go }) {
   const [busy, setBusy] = useState(false);
   const [shrinkStatus, setShrinkStatus] = useState({ text: '', tone: 'status' });
   const [lowEnergyStatus, setLowEnergyStatus] = useState({ text: '', tone: 'status' });
+  const [supportChoice, setSupportChoice] = useState(null);
+  const [supportStatus, setSupportStatus] = useState({ text: '', tone: 'status' });
+  const [helperAnswers, setHelperAnswers] = useState({ focus: '', clarity: '', energy: '' });
   const task = pickPriorityTask(data.tasks);
 
-  async function useShrunkStep() {
+  async function persistSuggestedStep(text, statusSetter = setSupportStatus) {
     if (!task || busy) return;
     setBusy(true);
-    setShrinkStatus({ text: '', tone: 'status' });
+    statusSetter({ text: '', tone: 'status' });
     try {
-      const shrunk = makeCustomStep(task, `Write one sentence about ${task.title}.`);
-      const updated = await setCurrentStep(uid, task.id, shrunk);
-      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
-      setShrinkStatus({ text: 'Saved as your next step for this task.', tone: 'status' });
+      const nextStep = makeCustomStep(task, text);
+      await setCurrentStep(uid, task.id, nextStep);
+
+      // Firestore persistence and local React state are deliberately handled
+      // separately. setCurrentStep() may not return a task object in every
+      // storage mode, so never replace the task in state with its return value.
+      setData(d => ({
+        ...d,
+        tasks: d.tasks.map(t => (t.id === task.id ? { ...t, currentStep: nextStep } : t)),
+      }));
+      statusSetter({ text: 'Saved as your next step for this task.', tone: 'status' });
     } catch {
-      setShrinkStatus({ text: GENERIC_ERROR, tone: 'error' });
+      statusSetter({ text: GENERIC_ERROR, tone: 'error' });
     } finally {
       setBusy(false);
     }
+  }
+
+  async function useShrunkStep() {
+    if (!task) return;
+    await persistSuggestedStep(`Write one sentence about ${task.title}.`, setShrinkStatus);
   }
 
   async function markLowEnergyDone() {
@@ -967,10 +982,123 @@ function Learn({ calmMode, data, uid, setData, go }) {
     }
   }
 
-  // Each activity is tied to the same "one small next step" task Today
-  // recommends, where there is one — not a generic example disconnected
-  // from the student's real work. With no open tasks, each falls back to
-  // the original generic wording rather than referencing nothing.
+  async function copyBodyDoubleMessage() {
+    const message = task
+      ? `Hi — I’m finding it hard to start “${task.title}”. Would you mind staying on a call with me for 20–25 minutes while we both work quietly? You don’t need to help with the task.`
+      : 'Hi — I’m finding it hard to start some university work. Would you mind staying on a call with me for 20–25 minutes while we both work quietly?';
+    setSupportStatus({ text: '', tone: 'status' });
+    try {
+      await navigator.clipboard.writeText(message);
+      await recordStrategyUse(uid, 'support').catch(() => {});
+      setSupportStatus({ text: 'Copied. Nothing is sent automatically.', tone: 'status' });
+    } catch {
+      setSupportStatus({ text: 'Could not copy automatically. You can copy the message manually instead.', tone: 'error' });
+    }
+  }
+
+  function helperRecommendation() {
+    const { focus, clarity, energy } = helperAnswers;
+    if (!focus || !clarity || !energy) return null;
+    if (focus === 'no') return 'sensory';
+    if (energy === 'none' || energy === 'low') return 'energy';
+    if (clarity === 'no') return 'big';
+    return 'start';
+  }
+
+  const helperResult = helperRecommendation();
+
+  const supportChoices = [
+    { id: 'start', icon: '🚪', title: 'I can’t start', text: 'Make beginning tiny.' },
+    { id: 'big', icon: '🧩', title: 'This feels too big', text: 'Choose one smaller piece.' },
+    { id: 'energy', icon: '🔋', title: 'I have very low energy', text: 'Lower the demand.' },
+    { id: 'sensory', icon: '🌿', title: 'I’m overstimulated', text: 'Reduce input before work.' },
+    { id: 'company', icon: '👥', title: 'I need company', text: 'Work alongside someone.' },
+    { id: 'unsure', icon: '💭', title: 'I don’t know what I need', text: 'Use a three-question helper.' },
+  ];
+
+  function renderSupportPanel() {
+    if (!supportChoice) return null;
+
+    if (supportChoice === 'start') return <article className="panel">
+      <small>GETTING STARTED</small>
+      <h2>Only begin. Finishing is not required.</h2>
+      <p>{task ? <>Open <b>&ldquo;{task.title}&rdquo;</b>. Nothing else yet.</> : 'Open the file, page or notes you need. Nothing else yet.'}</p>
+      <FocusTimer seconds={120} />
+      {task && <button className="option" onClick={() => go('tasks')}>Open &ldquo;{task.title}&rdquo; in my plan</button>}
+      <p className="hint">Opening it counts. You can stop after two minutes.</p>
+    </article>;
+
+    if (supportChoice === 'big') return <article className="panel">
+      <small>MAKE IT SMALLER</small>
+      <h2>Choose the version that feels possible.</h2>
+      {task ? <>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Open ${task.title} and find the section you need next.`)}><b>Tiny</b><br />Open it and find the next section.</button>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Add one bullet point to ${task.title}.`)}><b>Small</b><br />Add one useful bullet point.</button>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Work on ${task.title} for five focused minutes.`)}><b>5-minute version</b><br />Work for five minutes, then reassess.</button>
+      </> : <p>Pick one section, one question or one sentence. The whole task can wait.</p>}
+      <StatusMessage text={supportStatus.text} tone={supportStatus.tone} />
+    </article>;
+
+    if (supportChoice === 'energy') return <article className="panel">
+      <small>LOW-ENERGY MODE</small>
+      <h2>Lower the requirement, not your self-worth.</h2>
+      <p>{task ? <>Current step: <b>{task.currentStep?.text || task.title}</b></> : 'Choose the smallest useful preparation for later.'}</p>
+      {task && <>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Open ${task.title} and leave it ready for later.`)}>Just prepare it for later</button>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Spend two minutes on ${task.title}, then stop if needed.`)}>Give it only two minutes</button>
+      </>}
+      <FocusTimer seconds={120} />
+      <StatusMessage text={supportStatus.text} tone={supportStatus.tone} />
+      <p className="hint">Resting or preparing the workspace can be the useful step today.</p>
+    </article>;
+
+    if (supportChoice === 'sensory') return <article className="panel">
+      <small>REDUCE INPUT FIRST</small>
+      <h2>No task work is required during this reset.</h2>
+      <p>Try changing just one thing: reduce sound, lower screen brightness, move somewhere quieter, or put your phone face down.</p>
+      <FocusTimer seconds={120} />
+      <p className="hint">After the timer, you can choose whether to work, rest longer, or return to Today.</p>
+      <button onClick={() => go('today')}>Back to Today</button>
+    </article>;
+
+    if (supportChoice === 'company') return <article className="panel">
+      <small>BODY DOUBLING</small>
+      <h2>Work quietly alongside someone.</h2>
+      <p>You do not need them to teach, supervise or motivate you. Their presence can simply make starting feel less solitary.</p>
+      <FocusTimer seconds={1500} />
+      <button className="option" onClick={copyBodyDoubleMessage}>Copy a message asking someone to join me</button>
+      <a className="option" href="https://www.youtube.com/watch?v=wYxDJOFgDw0" target="_blank" rel="noopener noreferrer">Optional 25-minute Study With Me video ↗</a>
+      <StatusMessage text={supportStatus.text} tone={supportStatus.tone} />
+      <p className="hint">External YouTube link. It is optional and never starts automatically.</p>
+    </article>;
+
+    return <article className="panel">
+      <small>QUICK HELPER</small>
+      <h2>Three questions. No perfect answer needed.</h2>
+      <label>Can you focus right now?
+        <select value={helperAnswers.focus} onChange={e => setHelperAnswers(a => ({ ...a, focus: e.target.value }))}>
+          <option value="">Choose one</option><option value="yes">Yes</option><option value="some">A little</option><option value="no">No</option>
+        </select>
+      </label>
+      <label>Does the task feel clear?
+        <select value={helperAnswers.clarity} onChange={e => setHelperAnswers(a => ({ ...a, clarity: e.target.value }))}>
+          <option value="">Choose one</option><option value="yes">Yes</option><option value="some">Not really</option><option value="no">No idea where to start</option>
+        </select>
+      </label>
+      <label>How much energy do you have?
+        <select value={helperAnswers.energy} onChange={e => setHelperAnswers(a => ({ ...a, energy: e.target.value }))}>
+          <option value="">Choose one</option><option value="some">Some</option><option value="low">Very little</option><option value="none">None</option>
+        </select>
+      </label>
+      {!helperResult && <p className="hint">Answer all three and Nuvora will suggest one support route.</p>}
+      {helperResult && <button className="primary" onClick={() => setSupportChoice(helperResult)}>
+        {helperResult === 'sensory' ? 'Try a reset first' : helperResult === 'energy' ? 'Try the low-energy version' : helperResult === 'big' ? 'Make the task smaller' : 'Try a tiny start'}
+      </button>}
+    </article>;
+  }
+
+  // Existing microlearning activities remain available so the redesign adds
+  // support without removing the flows already covered by regression tests.
   const allActivities = [
     {
       title: 'The 2-minute start', badge: '2–3 MIN · RECOMMENDED',
@@ -984,9 +1112,7 @@ function Learn({ calmMode, data, uid, setData, go }) {
       body: <>
         <p>{task ? `Turn "${task.title}" into: "Write one sentence about ${task.title}."` : 'Turn "Write introduction" into "Write one sentence explaining the topic."'}</p>
         <FocusTimer seconds={120} />
-        {task && <div className="row">
-          <button className="option" disabled={busy} onClick={useShrunkStep}>Use this as my next step</button>
-        </div>}
+        {task && <div className="row"><button className="option" disabled={busy} onClick={useShrunkStep}>Use this as my next step</button></div>}
         <StatusMessage text={shrinkStatus.text} tone={shrinkStatus.tone} />
       </>,
     },
@@ -995,9 +1121,7 @@ function Learn({ calmMode, data, uid, setData, go }) {
       body: <>
         <p>{task ? `The low-energy version of "${task.title}" is just: "${task.currentStep?.text}"` : "Choose the smallest useful version of today's task."}</p>
         <FocusTimer seconds={120} />
-        {task && !task.currentStep?.done && <div className="row">
-          <button className="option" disabled={busy} onClick={markLowEnergyDone}>I did this</button>
-        </div>}
+        {task && !task.currentStep?.done && <div className="row"><button className="option" disabled={busy} onClick={markLowEnergyDone}>I did this</button></div>}
         <StatusMessage text={lowEnergyStatus.text} tone={lowEnergyStatus.tone} />
       </>,
     },
@@ -1006,25 +1130,37 @@ function Learn({ calmMode, data, uid, setData, go }) {
       body: <>
         <p>1. Reopen the work. 2. Find your last completed point. 3. Choose one next action.</p>
         <FocusTimer seconds={120} />
-        {task && <div className="row">
-          <button className="option" onClick={() => go('tasks')}>Open &ldquo;{task.title}&rdquo; in my plan</button>
-        </div>}
+        {task && <div className="row"><button className="option" onClick={() => go('tasks')}>Open &ldquo;{task.title}&rdquo; in my plan</button></div>}
       </>,
     },
   ];
-  // "Today's pick" is always the first, recommended activity — pulled out
-  // into its own highlighted card, fully expanded, rather than being one
-  // more item in a long list. Everything else stays collapsed by default
-  // (progressive disclosure) so the page reads as a short menu of choices,
-  // not a wall of instructions to scan through.
+
   const [pick, ...rest] = allActivities;
   const ACTIVITY_COLORS = ['teal', 'amber', 'blue'];
   const showRest = !calmMode || showAll;
 
   return <>
-    <div className="page-title"><h1>Small resets</h1><Leaf /></div>
-    <p>Short, focused activities for difficult moments. Choose only what feels useful.</p>
+    <div className="page-title"><h1>Learn</h1><Leaf /></div>
+    <p><b>Support tools for difficult study moments.</b> You do not need to fix everything. Pick the problem that feels closest.</p>
 
+    <div className="panel">
+      <h2>What would help right now?</h2>
+      <div className="scale-vertical" aria-label="What would help right now?">
+        {supportChoices.map(choice => <button
+          key={choice.id}
+          className={`option ${supportChoice === choice.id ? 'selected' : ''}`}
+          aria-pressed={supportChoice === choice.id}
+          onClick={() => { setSupportChoice(choice.id); setSupportStatus({ text: '', tone: 'status' }); }}
+        >
+          <b>{choice.icon} {choice.title}</b><br /><span className="hint">{choice.text}</span>
+        </button>)}
+      </div>
+      <p className="hint">One choice is enough. You can change it at any time.</p>
+    </div>
+
+    {renderSupportPanel()}
+
+    <div className="all-activities-label">QUICK ACTIVITIES</div>
     <div className="pick-card">
       <div className="pick-label"><span>TODAY'S PICK</span></div>
       <h2 style={{ margin: 0 }}>{pick.title}</h2>
@@ -1045,12 +1181,18 @@ function Learn({ calmMode, data, uid, setData, go }) {
       ? <button className="link" onClick={() => setShowAll(true)}>Show other small resets</button>
       : <article className="panel">
         <h2>Reset Space</h2>
-        <p>For a guided breathing exercise or a longer break, the NHS's Every Mind Matters has free, evidence-based resources.</p>
+        <p>For a guided breathing exercise or a longer break, the NHS's Every Mind Matters has free wellbeing resources.</p>
         <a className="option" href="https://www.nhs.uk/every-mind-matters/" target="_blank" rel="noopener noreferrer">Open Every Mind Matters (opens in a new tab, leaves Nuvora) ↗</a>
-        <p className="hint">This is an external NHS website, not part of Nuvora. It is not a replacement for professional support.</p>
+        <details>
+          <summary>More trusted resources — optional</summary>
+          <a className="option" href="https://www.adhdfoundation.org.uk/resources/" target="_blank" rel="noopener noreferrer">ADHD Foundation resources ↗</a>
+          <a className="option" href="https://www.autism.org.uk/advice-and-guidance/about-autism/sensory-processing" target="_blank" rel="noopener noreferrer">National Autistic Society: sensory processing ↗</a>
+        </details>
+        <p className="hint">External websites are optional and are not a replacement for professional support.</p>
       </article>}
   </>;
 }
+
 
 const STRATEGY_LABELS = { start: 'Getting started', big: 'Breaking a task down', energy: 'Low-energy attempts', reset: 'Short resets', support: 'Asking for help' };
 
