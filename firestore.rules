@@ -1,56 +1,226 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    /*
+     * True only when the signed-in Firebase user owns the
+     * /users/{userId} branch being accessed.
+     */
     function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
+      return request.auth != null
+        && request.auth.uid == userId;
     }
 
-    // Loose on purpose: only the fields that matter for correctness are
-    // constrained (title's type, done's type, priority's enum). Anything
-    // else (module, due, currentStep's shape, etc.) is left unvalidated —
-    // per the brief, the priority is ownership first, reasonable value
-    // validation second, and rules that stay maintainable third. A
-    // partial updateDoc() still evaluates against the *resulting* merged
-    // document here, not just the changed fields, so this also covers
-    // task edits correctly.
-    function isValidTask() {
-      let data = request.resource.data;
-      return data.title is string
+    /*
+     * Validate Nuvora task documents.
+     *
+     * The rule deliberately validates the stable fields that the current
+     * application relies on without over-constraining optional/future
+     * dissertation fields.
+     */
+    function validTask(data) {
+      return
+        data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 200
+
+        && data.module is string
+        && data.module.size() <= 100
+
+        && data.due is string
+        && data.due.size() <= 10
+
+        && data.priority is string
+        && data.priority in [
+          'low',
+          'normal',
+          'high'
+        ]
+
+        && data.bucket is string
+        && data.bucket in [
+          'today',
+          'week',
+          'later'
+        ]
+
         && data.done is bool
-        && (!('priority' in data) || data.priority in ['low', 'normal', 'high']);
+
+        && data.currentStep is map
+
+        && data.currentStep.id is string
+
+        && data.currentStep.text is string
+        && data.currentStep.text.size() <= 500
+
+        && data.currentStep.done is bool;
     }
 
-    // A check-in's risk is either absent/null (an incomplete check-in —
-    // see lib/store.js's saveCheckin and the Phase 2 "don't invent a
-    // neutral score" rule) or a valid scored result.
-    function isValidCheckin() {
-      let data = request.resource.data;
-      return !('risk' in data) || data.risk == null || (
-        data.risk.score is number && data.risk.score >= 0 && data.risk.score <= 100
-        && data.risk.band in ['Low', 'Moderate', 'Higher']
-      );
+    /*
+     * A completed pressure result must stay within the
+     * transparent categories used by Nuvora.
+     *
+     * Risk is optional because an incomplete / unanswered
+     * check-in must not be forced into an artificial pressure band.
+     */
+    function validRisk(data) {
+      return !('risk' in data)
+        || (
+          data.risk is map
+
+          && data.risk.score is number
+          && data.risk.score >= 0
+          && data.risk.score <= 120
+
+          && data.risk.band is string
+          && data.risk.band in [
+            'Low',
+            'Moderate',
+            'Higher'
+          ]
+
+          && data.risk.factors is map
+        );
     }
 
+    /*
+     * Check-ins always contain the user's answers.
+     *
+     * createdAt may be a Firestore timestamp in signed-in mode or
+     * a string when older/imported application data is represented.
+     */
+    function validCheckin(data) {
+      return
+        data.answers is map
+
+        && (
+          !('createdAt' in data)
+          || data.createdAt is timestamp
+          || data.createdAt is string
+        )
+
+        && validRisk(data);
+    }
+
+
+    /*
+     * ============================================================
+     * USER ROOT
+     * ============================================================
+     *
+     * A user can only access their own Nuvora branch.
+     */
     match /users/{userId} {
-      // Settings/stats on the user document itself: ownership only — no
-      // schema imposed here, since these are simple preference/count
-      // fields with no security-relevant range to enforce.
-      allow read, write: if isOwner(userId);
 
+      allow read: if isOwner(userId);
+
+      allow create, update:
+        if isOwner(userId);
+
+      allow delete:
+        if isOwner(userId);
+
+
+      /*
+       * ==========================================================
+       * TASKS
+       * ==========================================================
+       */
       match /tasks/{taskId} {
-        allow read, delete: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidTask();
+
+        allow read:
+          if isOwner(userId);
+
+        allow create, update:
+          if isOwner(userId)
+          && validTask(
+            request.resource.data
+          );
+
+        allow delete:
+          if isOwner(userId);
       }
 
+
+      /*
+       * ==========================================================
+       * CHECK-INS
+       * ==========================================================
+       */
       match /checkins/{checkinId} {
-        allow read, delete: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidCheckin();
+
+        allow read:
+          if isOwner(userId);
+
+        allow create, update:
+          if isOwner(userId)
+          && validCheckin(
+            request.resource.data
+          );
+
+        allow delete:
+          if isOwner(userId);
       }
 
+
+      /*
+       * ==========================================================
+       * REFLECTIONS
+       * ==========================================================
+       *
+       * Reflection content remains private to the account owner.
+       * We do not impose content-format assumptions here because
+       * this part of the Nuvora schema remains intentionally
+       * flexible.
+       */
       match /reflections/{reflectionId} {
-        allow read, write: if isOwner(userId);
+
+        allow read, create, update, delete:
+          if isOwner(userId);
       }
+
+
+      /*
+       * ==========================================================
+       * SETTINGS
+       * ==========================================================
+       *
+       * Covers a settings subcollection if used by the current
+       * persistence implementation.
+       */
+      match /settings/{settingId} {
+
+        allow read, create, update, delete:
+          if isOwner(userId);
+      }
+
+
+      /*
+       * ==========================================================
+       * STATS
+       * ==========================================================
+       */
+      match /stats/{statsId} {
+
+        allow read, create, update, delete:
+          if isOwner(userId);
+      }
+    }
+
+
+    /*
+     * ============================================================
+     * DEFAULT DENY
+     * ============================================================
+     *
+     * Anything not explicitly listed above is private.
+     *
+     * There is deliberately NO recursive
+     * /{document=**} allow-write rule.
+     */
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
