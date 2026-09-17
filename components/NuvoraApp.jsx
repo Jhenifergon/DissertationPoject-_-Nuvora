@@ -29,6 +29,13 @@ const questions = [
 ];
 const nav = [['today', Home, 'Today'], ['tasks', ListTodo, 'Tasks'], ['learn', BookOpen, 'Learn'], ['progress', TrendingUp, 'Progress'], ['support', Heart, 'Support']];
 const calmNav = [['today', Home, 'My step'], ['support', Heart, 'Support']];
+
+const CALM_SESSION_DEFAULTS = {
+  hideDeadlines: true,
+  hideProgressNumbers: true,
+  reduceVisualDetail: true,
+  reduceMotion: true,
+};
 const priorities = [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']];
 const BARRIERS = [
   { id: 'start', label: 'I do not know where to start' },
@@ -172,6 +179,10 @@ export default function NuvoraApp() {
   const [settings, setSettings] = useState(defaultSettings);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState('');
+  // Temporary Calm-session preferences. These deliberately stay out of
+  // Firebase and reset each time Calm Mode starts, so the student can
+  // reduce demand in the moment without changing their normal setup.
+  const [calmSession, setCalmSession] = useState(CALM_SESSION_DEFAULTS);
   // The daily check-in's in-progress answers live here (not inside the
   // Checkin screen itself) so that leaving and returning to the check-in
   // within the same session does not lose what was already answered.
@@ -205,9 +216,13 @@ export default function NuvoraApp() {
     const justEnabled = settings.calmMode && !previousCalmModeRef.current;
     previousCalmModeRef.current = settings.calmMode;
 
-    if (justEnabled && ['tasks', 'learn', 'progress'].includes(screen)) {
-      setScreen('today');
-      setMenu(false);
+    if (justEnabled) {
+      setCalmSession(CALM_SESSION_DEFAULTS);
+
+      if (['tasks', 'learn', 'progress'].includes(screen)) {
+        setScreen('today');
+        setMenu(false);
+      }
     }
   }, [settings.calmMode, screen]);
 
@@ -275,7 +290,12 @@ export default function NuvoraApp() {
     }
   }
 
-  return <main className={`${settings.calmMode ? 'calm' : ''} ${settings.reducedMotion ? 'reduced' : ''}`} style={{ '--scale': settings.textScale }}>
+  const calmReducedMotion = settings.calmMode && calmSession.reduceMotion;
+
+  return <main
+    className={`${settings.calmMode ? 'calm' : ''} ${(settings.reducedMotion || calmReducedMotion) ? 'reduced' : ''}${settings.calmMode && calmSession.reduceVisualDetail ? ' calm-low-detail' : ''}`}
+    style={{ '--scale': settings.textScale }}
+  >
     <section className="phone">
       <header>
         <button className="icon" ref={menuButtonRef} onClick={() => setMenu(true)} aria-label="Open menu"><Menu /></button>
@@ -301,11 +321,11 @@ export default function NuvoraApp() {
         <p>Nuvora provides academic support, not medical advice or diagnosis.</p>
       </Drawer>
       <div className={`content${screen === 'overwhelmed' ? ' overwhelmed-bg' : ''}`}>
-        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} />}
-        {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} calmMode={settings.calmMode} />}
+        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} calmSession={calmSession} setCalmSession={setCalmSession} />}
+        {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} calmMode={settings.calmMode} calmSession={calmSession} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn calmMode={settings.calmMode} data={data} uid={user.uid} setData={setData} go={go} />}
-        {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} go={go} />}
+        {screen === 'progress' && <Progress data={data} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} go={go} calmSession={calmSession} />}
         {screen === 'reflection' && <Reflection uid={user.uid} data={data} setData={setData} go={go} />}
         {screen === 'support' && <Support data={data} settings={settings} go={go} />}
         {screen === 'settings' && <SettingsPage value={settings} busy={settingsBusy} error={settingsError} onChange={updateSettings} go={go} />}
@@ -467,7 +487,7 @@ function Auth() {
 
 // --- Today -------------------------------------------------------------
 
-function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy }) {
+function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy, calmSession, setCalmSession }) {
   const risk = data.checkins[0]?.risk;
   const recommendation = recommendAction(data.tasks, risk?.band);
 
@@ -478,11 +498,43 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy 
   // is lost, just decluttered.
   if (settings.calmMode && recommendation) {
     return <div className="calm-focus">
-      <Mascot size={70} mood="calm" />
-      <div className="calm-heading">Calm Mode is on — only one thing is shown at a time.</div>
+      {!calmSession.reduceVisualDetail && <Mascot size={70} mood="calm" />}
+      <div className="calm-heading">Calm Mode is on — Nuvora is reducing choices for this session.</div>
       <small>YOUR NEXT SMALL STEP</small>
       <div className="calm-step">{recommendation.actionText}</div>
+
       <button className="primary" style={{ width: 'auto', padding: '14px 32px' }} onClick={() => go('tasks')}>Open my plan</button>
+
+      <details className="panel" style={{ width: '100%', maxWidth: 340, textAlign: 'left' }}>
+        <summary>Adjust calm settings</summary>
+        <p className="hint">These changes are temporary and reset the next time Calm Mode starts.</p>
+
+        <Setting
+          label="Hide time pressure"
+          text="Temporarily hides deadlines and priority labels."
+          checked={calmSession.hideDeadlines}
+          onChange={v => setCalmSession(current => ({ ...current, hideDeadlines: v }))}
+        />
+        <Setting
+          label="Hide progress numbers"
+          text="Hides scores and totals if progress details are opened."
+          checked={calmSession.hideProgressNumbers}
+          onChange={v => setCalmSession(current => ({ ...current, hideProgressNumbers: v }))}
+        />
+        <Setting
+          label="Reduce visual detail"
+          text="Hides non-essential illustrations, step previews and task edit controls."
+          checked={calmSession.reduceVisualDetail}
+          onChange={v => setCalmSession(current => ({ ...current, reduceVisualDetail: v }))}
+        />
+        <Setting
+          label="Reduce motion"
+          text="Temporarily removes non-essential animation and transitions."
+          checked={calmSession.reduceMotion}
+          onChange={v => setCalmSession(current => ({ ...current, reduceMotion: v }))}
+        />
+      </details>
+
       <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, calmMode: false })}>Turn off Calm Mode</button>
     </div>;
   }
@@ -621,7 +673,7 @@ function TaskForm({ initial, tasks, onCancel, onSave, saving }) {
   </form>;
 }
 
-function Tasks({ data, uid, setData, calmMode }) {
+function Tasks({ data, uid, setData, calmMode, calmSession = CALM_SESSION_DEFAULTS }) {
   const [tab, setTab] = useState('today');
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -732,13 +784,15 @@ function Tasks({ data, uid, setData, calmMode }) {
         <div>
           <small>
             {t.module}
-            {!calmMode && <>{' · '}{relativeDueLabel(t.due)}{t.priority === 'high' && ' · High priority'}</>}
+            {!(calmMode && calmSession.hideDeadlines) && <>{' · '}{relativeDueLabel(t.due)}{t.priority === 'high' && ' · High priority'}</>}
           </small>
           <h2>{t.title}</h2>
-          {!calmMode && <p>{t.currentStep?.text}</p>}
+          {!(calmMode && calmSession.reduceVisualDetail) && <p>{t.currentStep?.text}</p>}
         </div>
-        <button className="icon" aria-label={`Edit ${t.title}`} disabled={busyIds.has(t.id)} onClick={e => { editTaskTriggerRef.current = e.currentTarget; setEditingId(t.id); }}><Pencil /></button>
-        <button className="icon trash" aria-label={`Delete ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => remove(t)}><Trash2 /></button>
+        {!(calmMode && calmSession.reduceVisualDetail) && <>
+          <button className="icon" aria-label={`Edit ${t.title}`} disabled={busyIds.has(t.id)} onClick={e => { editTaskTriggerRef.current = e.currentTarget; setEditingId(t.id); }}><Pencil /></button>
+          <button className="icon trash" aria-label={`Delete ${t.title}`} disabled={busyIds.has(t.id)} onClick={() => remove(t)}><Trash2 /></button>
+        </>}
       </article>
     ))}
     {!filtered.length && !adding && !editingId && <Empty title="Nothing here yet" text="Add one task when you are ready." />}
@@ -1236,10 +1290,11 @@ function Learn({ calmMode, data, uid, setData, go }) {
 
 const STRATEGY_LABELS = { start: 'Getting started', big: 'Breaking a task down', energy: 'Low-energy attempts', reset: 'Short resets', support: 'Asking for help' };
 
-function Progress({ data, settings, updateSettings, settingsBusy, go }) {
+function Progress({ data, settings, updateSettings, settingsBusy, go, calmSession = CALM_SESSION_DEFAULTS }) {
   const totalStrategyUses = Object.values(data.stats.strategyUses).reduce((a, b) => a + b, 0);
   const usedStrategies = Object.entries(data.stats.strategyUses).filter(([, n]) => n > 0);
   const [showTrends, setShowTrends] = useState(false);
+  const showProgressNumbers = !(settings.calmMode && calmSession.hideProgressNumbers);
 
   if (settings.hideProgress) {
     return <>
@@ -1258,7 +1313,7 @@ function Progress({ data, settings, updateSettings, settingsBusy, go }) {
     </div>}
     {usedStrategies.length > 0 && <div className="panel">
       <h2>Helpful strategies</h2>
-      {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{n}</b></div>)}
+      {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{showProgressNumbers ? n : 'Used'}</b></div>)}
     </div>}
     <h2>Recent pressure patterns</h2>
     {data.checkins.slice(0, 7).map((c, i) => {
@@ -1268,7 +1323,7 @@ function Progress({ data, settings, updateSettings, settingsBusy, go }) {
       // "main contributors" breakdown for that day only shows if opened —
       // seven full breakdowns at once would be a lot to scan by default.
       return <details className="trend-entry" key={c.id || i}>
-        <summary className="trend"><span>{dateLabel}</span><div><i style={{ width: `${c.risk.score}%` }} /></div><b>{c.risk.score}</b></summary>
+        <summary className="trend"><span>{dateLabel}</span><div><i style={{ width: showProgressNumbers ? `${c.risk.score}%` : '100%' }} /></div><b>{showProgressNumbers ? c.risk.score : c.risk.band}</b></summary>
         <ul className="explanation-list">{explainPressure(c.risk, data.tasks).map((line, j) => <li key={j}>{line}</li>)}</ul>
       </details>;
     })}
@@ -1278,11 +1333,13 @@ function Progress({ data, settings, updateSettings, settingsBusy, go }) {
   return <>
     <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
     <p>These numbers are just for your own reflection — there's no target to hit, and nothing here is shared with anyone.</p>
-    <div className="stats">
-      <article><small>CHECK-INS SO FAR</small><b>{data.checkins.length}</b></article>
-      <article><small>SMALL STEPS TAKEN</small><b>{data.stats.stepsCompleted}</b></article>
-      <article><small>STRATEGIES USED</small><b>{totalStrategyUses}</b></article>
-    </div>
+    {showProgressNumbers
+      ? <div className="stats">
+        <article><small>CHECK-INS SO FAR</small><b>{data.checkins.length}</b></article>
+        <article><small>SMALL STEPS TAKEN</small><b>{data.stats.stepsCompleted}</b></article>
+        <article><small>STRATEGIES USED</small><b>{totalStrategyUses}</b></article>
+      </div>
+      : <p className="status-msg status" role="status">Progress numbers are hidden for this Calm session.</p>}
     {settings.calmMode && !showTrends
       ? <button className="link" onClick={() => setShowTrends(true)}>Show trends &amp; strategies</button>
       : trendsAndStrategies}

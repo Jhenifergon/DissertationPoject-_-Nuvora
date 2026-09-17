@@ -373,7 +373,7 @@ describe('Adaptive Calm Mode — Phase A', () => {
     seedRichState(true);
     render(<NuvoraApp />);
 
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    await screen.findByText(/Calm Mode is on/);
 
     expect(screen.getByRole('button', { name: 'My step' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Support' })).toBeInTheDocument();
@@ -387,7 +387,7 @@ describe('Adaptive Calm Mode — Phase A', () => {
     seedRichState(true);
     render(<NuvoraApp />);
 
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    await screen.findByText(/Calm Mode is on/);
     fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
 
     await screen.findByText('My plan');
@@ -400,7 +400,7 @@ describe('Adaptive Calm Mode — Phase A', () => {
     seedRichState(true);
     render(<NuvoraApp />);
 
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    await screen.findByText(/Calm Mode is on/);
     fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
     await screen.findByText('My plan');
 
@@ -414,7 +414,7 @@ describe('Adaptive Calm Mode — Phase A', () => {
     seedRichState(true);
     render(<NuvoraApp />);
 
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    await screen.findByText(/Calm Mode is on/);
     fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
     await screen.findByText('My plan');
 
@@ -440,7 +440,7 @@ describe('Adaptive Calm Mode — Phase A', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode on' }));
 
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    await screen.findByText(/Calm Mode is on/);
     expect(screen.queryByText('My plan')).not.toBeInTheDocument();
   });
 
@@ -454,7 +454,7 @@ describe('Adaptive Calm Mode — Phase A', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode on' }));
 
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    await screen.findByText(/Calm Mode is on/);
     expect(screen.queryByText('What would help right now?')).not.toBeInTheDocument();
   });
 
@@ -468,8 +468,130 @@ describe('Adaptive Calm Mode — Phase A', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode on' }));
 
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    await screen.findByText(/Calm Mode is on/);
     expect(screen.queryByText('Progress, without pressure')).not.toBeInTheDocument();
+  });
+});
+
+
+
+describe('Adaptive Calm Mode — Phase B temporary settings', () => {
+  function seedCalmState(calmMode = true) {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [
+        {
+          id: 't1',
+          title: 'Calm test task',
+          module: 'Dissertation',
+          due: yesterday.toISOString().slice(0, 10),
+          priority: 'high',
+          done: false,
+          bucket: 'today',
+          currentStep: {
+            id: 's1',
+            text: 'Open the document and read the title.',
+            done: false,
+            completedAt: null,
+          },
+        },
+      ],
+      checkins: [],
+      reflections: [],
+      settings: { calmMode, reducedMotion: false, textScale: 1 },
+      stats: {
+        stepsCompleted: 3,
+        strategyUses: { start: 1, big: 0, energy: 0, reset: 0, support: 0 },
+      },
+    }));
+  }
+
+  async function openCalmSettings() {
+    const summary = await screen.findByText('Adjust calm settings');
+    fireEvent.click(summary);
+  }
+
+  it('starts each Calm session with all temporary demand-reduction controls enabled', async () => {
+    seedCalmState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    await openCalmSettings();
+
+    expect(screen.getByRole('switch', { name: /Hide time pressure/i })).toBeChecked();
+    expect(screen.getByRole('switch', { name: /Hide progress numbers/i })).toBeChecked();
+    expect(screen.getByRole('switch', { name: /Reduce visual detail/i })).toBeChecked();
+    expect(screen.getByRole('switch', { name: /Reduce motion/i })).toBeChecked();
+  });
+
+  it('can reveal deadline and priority information without leaving Calm Mode', async () => {
+    seedCalmState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    await openCalmSettings();
+
+    fireEvent.click(screen.getByRole('switch', { name: /Hide time pressure/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
+
+    await screen.findByText('My plan');
+    expect(screen.getByText(/Overdue/i)).toBeInTheDocument();
+    expect(screen.getByText(/High priority/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'My step' })).toBeInTheDocument();
+  });
+
+  it('can restore task detail and edit controls without turning Calm Mode off', async () => {
+    seedCalmState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    await openCalmSettings();
+
+    fireEvent.click(screen.getByRole('switch', { name: /Reduce visual detail/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
+
+    await screen.findByText('My plan');
+    expect(screen.getByText('Open the document and read the title.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Calm test task' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete Calm test task' })).toBeInTheDocument();
+  });
+
+  it('temporary Reduced Motion works independently of the saved accessibility setting', async () => {
+    seedCalmState(true);
+    const { container } = render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    expect(container.querySelector('main')).toHaveClass('reduced');
+
+    await openCalmSettings();
+    fireEvent.click(screen.getByRole('switch', { name: /Reduce motion/i }));
+
+    expect(container.querySelector('main')).not.toHaveClass('reduced');
+  });
+
+  it('resets temporary Calm choices when Calm Mode is started again', async () => {
+    seedCalmState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    await openCalmSettings();
+
+    fireEvent.click(screen.getByRole('switch', { name: /Hide time pressure/i }));
+    expect(screen.getByRole('switch', { name: /Hide time pressure/i })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode off' }));
+    await screen.findByText(/How are things feeling/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode on' }));
+    await screen.findByText(/Calm Mode is on/);
+    await openCalmSettings();
+
+    expect(screen.getByRole('switch', { name: /Hide time pressure/i })).toBeChecked();
+    expect(screen.getByRole('switch', { name: /Reduce visual detail/i })).toBeChecked();
+    expect(screen.getByRole('switch', { name: /Reduce motion/i })).toBeChecked();
   });
 });
 
