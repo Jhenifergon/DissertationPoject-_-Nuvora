@@ -183,6 +183,8 @@ export default function NuvoraApp() {
   // Firebase and reset each time Calm Mode starts, so the student can
   // reduce demand in the moment without changing their normal setup.
   const [calmSession, setCalmSession] = useState(CALM_SESSION_DEFAULTS);
+  const [pausedThisSession, setPausedThisSession] = useState(false);
+  const [restartAcknowledged, setRestartAcknowledged] = useState(false);
   // The daily check-in's in-progress answers live here (not inside the
   // Checkin screen itself) so that leaving and returning to the check-in
   // within the same session does not lose what was already answered.
@@ -218,6 +220,8 @@ export default function NuvoraApp() {
 
     if (justEnabled) {
       setCalmSession(CALM_SESSION_DEFAULTS);
+      setPausedThisSession(false);
+      setRestartAcknowledged(false);
 
       if (['tasks', 'learn', 'progress'].includes(screen)) {
         setScreen('today');
@@ -321,7 +325,7 @@ export default function NuvoraApp() {
         <p>Nuvora provides academic support, not medical advice or diagnosis.</p>
       </Drawer>
       <div className={`content${screen === 'overwhelmed' ? ' overwhelmed-bg' : ''}`}>
-        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} calmSession={calmSession} setCalmSession={setCalmSession} />}
+        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} calmSession={calmSession} setCalmSession={setCalmSession} pausedThisSession={pausedThisSession} setPausedThisSession={setPausedThisSession} restartAcknowledged={restartAcknowledged} setRestartAcknowledged={setRestartAcknowledged} />}
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} calmMode={settings.calmMode} calmSession={calmSession} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn calmMode={settings.calmMode} data={data} uid={user.uid} setData={setData} go={go} />}
@@ -487,9 +491,94 @@ function Auth() {
 
 // --- Today -------------------------------------------------------------
 
-function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy, calmSession, setCalmSession }) {
+function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy, calmSession, setCalmSession, pausedThisSession, setPausedThisSession, restartAcknowledged, setRestartAcknowledged }) {
   const risk = data.checkins[0]?.risk;
   const recommendation = recommendAction(data.tasks, risk?.band);
+  const restartMemory = settings.restartMemory;
+  const restartTask = restartMemory
+    ? data.tasks.find(t => t.id === restartMemory.taskId && !t.done && !t.currentStep?.done)
+    : null;
+  const hasValidRestart = Boolean(restartMemory && restartTask);
+
+  async function stopForNow() {
+    if (!recommendation || settingsBusy) return;
+
+    const restartPoint = {
+      taskId: recommendation.task.id,
+      taskTitle: recommendation.task.title,
+      stepText: recommendation.actionText,
+      stoppedAt: new Date().toISOString(),
+    };
+
+    await updateSettings({ ...settings, restartMemory: restartPoint });
+    setRestartAcknowledged(false);
+    setPausedThisSession(true);
+  }
+
+  async function clearRestartMemory() {
+    if (settingsBusy) return;
+    await updateSettings({ ...settings, restartMemory: null });
+    setRestartAcknowledged(false);
+  }
+
+  if (pausedThisSession) {
+    return <div className="calm-focus">
+      <Leaf size={42} aria-hidden="true" />
+      <div className="calm-heading">You can stop here.</div>
+      <p>Your place is saved. Nuvora will not ask you to do anything else unless you choose to continue.</p>
+
+      {settings.restartMemory && <article className="panel" style={{ width: '100%', maxWidth: 340, textAlign: 'left' }}>
+        <small>SAVED RESTART POINT</small>
+        <h2 style={{ marginBottom: 6 }}>{settings.restartMemory.taskTitle || 'Your task'}</h2>
+        <p>{settings.restartMemory.stepText}</p>
+      </article>}
+
+      <button
+        className="primary"
+        style={{ width: 'auto', padding: '14px 32px' }}
+        onClick={() => {
+          setPausedThisSession(false);
+          setRestartAcknowledged(true);
+        }}
+      >
+        Continue from here
+      </button>
+
+      <button
+        className="link"
+        disabled={settingsBusy}
+        onClick={() => updateSettings({ ...settings, calmMode: false })}
+      >
+        Leave Calm Mode
+      </button>
+    </div>;
+  }
+
+  if (settings.calmMode && hasValidRestart && !restartAcknowledged) {
+    return <div className="calm-focus">
+      {!calmSession.reduceVisualDetail && <Mascot size={70} mood="calm" />}
+      <small>WELCOME BACK</small>
+      <div className="calm-heading">You already have a safe place to restart.</div>
+
+      <article className="panel" style={{ width: '100%', maxWidth: 340, textAlign: 'left' }}>
+        <small>{restartTask.module || 'YOUR TASK'}</small>
+        <h2 style={{ marginBottom: 6 }}>{restartMemory.taskTitle || restartTask.title}</h2>
+        <p>{restartMemory.stepText}</p>
+      </article>
+
+      <button
+        className="primary"
+        style={{ width: 'auto', padding: '14px 32px' }}
+        onClick={() => setRestartAcknowledged(true)}
+      >
+        Continue from here
+      </button>
+
+      <button className="link" disabled={settingsBusy} onClick={clearRestartMemory}>
+        Use today&apos;s suggestion instead
+      </button>
+    </div>;
+  }
 
   // Genuine Calm Mode: rather than only changing colours, this collapses
   // the whole dashboard to the single next step when Calm Mode is on —
@@ -501,9 +590,10 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
       {!calmSession.reduceVisualDetail && <Mascot size={70} mood="calm" />}
       <div className="calm-heading">Calm Mode is on — Nuvora is reducing choices for this session.</div>
       <small>YOUR NEXT SMALL STEP</small>
-      <div className="calm-step">{recommendation.actionText}</div>
+      <div className="calm-step">{hasValidRestart ? restartMemory.stepText : recommendation.actionText}</div>
 
       <button className="primary" style={{ width: 'auto', padding: '14px 32px' }} onClick={() => go('tasks')}>Open my plan</button>
+      <button className="option" style={{ width: 'auto', padding: '12px 22px' }} disabled={settingsBusy} onClick={stopForNow}>Stop for now</button>
 
       <details className="panel" style={{ width: '100%', maxWidth: 340, textAlign: 'left' }}>
         <summary>Adjust calm settings</summary>
@@ -540,6 +630,25 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
   }
 
   return <>
+    {hasValidRestart && <article className="panel" style={{ marginTop: 0 }}>
+      <small>RESTART POINT SAVED</small>
+      <h2>Pick up where you left off</h2>
+      <p><b>{restartMemory.taskTitle || restartTask.title}</b></p>
+      <p>{restartMemory.stepText}</p>
+      <div className="row">
+        <button
+          className="primary"
+          disabled={settingsBusy}
+          onClick={async () => {
+            await updateSettings({ ...settings, calmMode: true });
+            setRestartAcknowledged(true);
+          }}
+        >
+          Continue gently
+        </button>
+        <button className="link" disabled={settingsBusy} onClick={clearRestartMemory}>Dismiss</button>
+      </div>
+    </article>}
     <div className="welcome"><div><small>{timeOfDayGreeting().toUpperCase()}</small><h1>How are things feeling, {displayNameOrFallback(settings.displayName)}?</h1></div><div className="avatar" aria-hidden="true">{avatarInitial(settings.displayName)}</div></div>
     {!risk ? <button className="checkin-card" onClick={() => go('checkin')}><div><b>Check in when it would help</b><span>A few gentle questions · skip anytime</span></div><Sparkles /></button> : <RiskCard risk={risk} tasks={data.tasks} />}
     <button className="overwhelmed" onClick={() => go('overwhelmed')}><Heart /> I’m feeling overwhelmed</button>

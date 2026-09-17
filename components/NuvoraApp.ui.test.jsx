@@ -596,6 +596,125 @@ describe('Adaptive Calm Mode — Phase B temporary settings', () => {
 });
 
 
+
+describe('Adaptive Calm Mode — Phase C stop and restart memory', () => {
+  function seedRestartState(calmMode = true, restartMemory = null) {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [{
+        id: 'restart-task',
+        title: 'Draft chapter 2',
+        module: 'Dissertation',
+        due: '',
+        priority: 'high',
+        done: false,
+        bucket: 'today',
+        currentStep: {
+          id: 'restart-step',
+          text: 'Open the document and read only the title.',
+          done: false,
+          completedAt: null,
+        },
+      }],
+      checkins: [],
+      reflections: [],
+      settings: {
+        calmMode,
+        reducedMotion: false,
+        textScale: 1,
+        displayName: '',
+        hideProgress: false,
+        supportPersonName: '',
+        supportPersonNote: '',
+        restartMemory,
+      },
+      stats: { stepsCompleted: 0, strategyUses: {} },
+    }));
+  }
+
+  it('Stop for now saves an exact restart point and removes further task pressure for the session', async () => {
+    seedRestartState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop for now' }));
+
+    await screen.findByText('You can stop here.');
+    expect(screen.getByText('Your place is saved. Nuvora will not ask you to do anything else unless you choose to continue.')).toBeInTheDocument();
+    expect(screen.getByText('Draft chapter 2')).toBeInTheDocument();
+    expect(screen.getByText('Open the document and read only the title.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open my plan' })).not.toBeInTheDocument();
+
+    const saved = JSON.parse(localStorage.getItem('nuvora-demo-data-v1'));
+    expect(saved.settings.restartMemory).toMatchObject({
+      taskId: 'restart-task',
+      taskTitle: 'Draft chapter 2',
+      stepText: 'Open the document and read only the title.',
+    });
+    expect(new Date(saved.settings.restartMemory.stoppedAt).toString()).not.toBe('Invalid Date');
+  });
+
+  it('shows the saved restart point again after a fresh render', async () => {
+    const restartMemory = {
+      taskId: 'restart-task',
+      taskTitle: 'Draft chapter 2',
+      stepText: 'Open the document and read only the title.',
+      stoppedAt: '2026-09-17T20:00:00.000Z',
+    };
+    seedRestartState(true, restartMemory);
+
+    render(<NuvoraApp />);
+
+    await screen.findByText('WELCOME BACK');
+    expect(screen.getByText('You already have a safe place to restart.')).toBeInTheDocument();
+    expect(screen.getByText('Draft chapter 2')).toBeInTheDocument();
+    expect(screen.getByText('Open the document and read only the title.')).toBeInTheDocument();
+  });
+
+  it('can resume the remembered step without inventing a new recovery flow', async () => {
+    const restartMemory = {
+      taskId: 'restart-task',
+      taskTitle: 'Draft chapter 2',
+      stepText: 'Open the document and read only the title.',
+      stoppedAt: '2026-09-17T20:00:00.000Z',
+    };
+    seedRestartState(true, restartMemory);
+
+    render(<NuvoraApp />);
+
+    await screen.findByText('WELCOME BACK');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue from here' }));
+
+    await screen.findByText(/Calm Mode is on/);
+    expect(screen.getByText('Open the document and read only the title.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop for now' })).toBeInTheDocument();
+  });
+
+  it('lets the student dismiss a restart point without changing the task itself', async () => {
+    const restartMemory = {
+      taskId: 'restart-task',
+      taskTitle: 'Draft chapter 2',
+      stepText: 'Open the document and read only the title.',
+      stoppedAt: '2026-09-17T20:00:00.000Z',
+    };
+    seedRestartState(false, restartMemory);
+
+    render(<NuvoraApp />);
+
+    await screen.findByText('Pick up where you left off');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText('Pick up where you left off')).not.toBeInTheDocument()
+    );
+
+    const saved = JSON.parse(localStorage.getItem('nuvora-demo-data-v1'));
+    expect(saved.settings.restartMemory).toBeNull();
+    expect(saved.tasks[0].title).toBe('Draft chapter 2');
+    expect(saved.tasks[0].currentStep.text).toBe('Open the document and read only the title.');
+  });
+});
+
+
 describe('task-type step templates', () => {
   it('a new essay-type task gets the essay progression\'s first step, not the generic one', async () => {
     render(<NuvoraApp />);
