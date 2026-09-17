@@ -185,6 +185,7 @@ export default function NuvoraApp() {
   const [calmSession, setCalmSession] = useState(CALM_SESSION_DEFAULTS);
   const [pausedThisSession, setPausedThisSession] = useState(false);
   const [restartAcknowledged, setRestartAcknowledged] = useState(false);
+  const [showCalmExit, setShowCalmExit] = useState(false);
   // The daily check-in's in-progress answers live here (not inside the
   // Checkin screen itself) so that leaving and returning to the check-in
   // within the same session does not lose what was already answered.
@@ -222,6 +223,7 @@ export default function NuvoraApp() {
       setCalmSession(CALM_SESSION_DEFAULTS);
       setPausedThisSession(false);
       setRestartAcknowledged(false);
+      setShowCalmExit(false);
 
       if (['tasks', 'learn', 'progress'].includes(screen)) {
         setScreen('today');
@@ -247,12 +249,20 @@ export default function NuvoraApp() {
     let cancelled = false;
     setLoadStatus('loading');
     loadData(user.uid)
-      .then(d => {
-        if (cancelled) return;
-        setData(d);
-        setSettings(d.settings);
-        setLoadStatus('success');
-      })
+        .then(d => {
+    if (cancelled) return;
+
+    setData(d);
+
+    // The stored Calm state is the starting state for this app session.
+    // Keep the transition ref in sync before updating settings so the
+    // "Calm was just enabled" effect only reacts to an actual user toggle,
+    // not to the initial settings load.
+    previousCalmModeRef.current = d.settings.calmMode;
+
+    setSettings(d.settings);
+    setLoadStatus('success');
+  })
       .catch(() => {
         if (!cancelled) setLoadStatus('error');
       });
@@ -325,7 +335,7 @@ export default function NuvoraApp() {
         <p>Nuvora provides academic support, not medical advice or diagnosis.</p>
       </Drawer>
       <div className={`content${screen === 'overwhelmed' ? ' overwhelmed-bg' : ''}`}>
-        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} calmSession={calmSession} setCalmSession={setCalmSession} pausedThisSession={pausedThisSession} setPausedThisSession={setPausedThisSession} restartAcknowledged={restartAcknowledged} setRestartAcknowledged={setRestartAcknowledged} />}
+        {screen === 'today' && <Today data={data} go={go} uid={user.uid} setData={setData} settings={settings} updateSettings={updateSettings} settingsBusy={settingsBusy} calmSession={calmSession} setCalmSession={setCalmSession} pausedThisSession={pausedThisSession} setPausedThisSession={setPausedThisSession} restartAcknowledged={restartAcknowledged} setRestartAcknowledged={setRestartAcknowledged} showCalmExit={showCalmExit} setShowCalmExit={setShowCalmExit} />}
         {screen === 'tasks' && <Tasks data={data} uid={user.uid} setData={setData} calmMode={settings.calmMode} calmSession={calmSession} />}
         {screen === 'checkin' && <Checkin uid={user.uid} data={data} setData={setData} go={go} draft={checkinDraft} setDraft={setCheckinDraft} />}
         {screen === 'learn' && <Learn calmMode={settings.calmMode} data={data} uid={user.uid} setData={setData} go={go} />}
@@ -491,7 +501,7 @@ function Auth() {
 
 // --- Today -------------------------------------------------------------
 
-function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy, calmSession, setCalmSession, pausedThisSession, setPausedThisSession, restartAcknowledged, setRestartAcknowledged }) {
+function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy, calmSession, setCalmSession, pausedThisSession, setPausedThisSession, restartAcknowledged, setRestartAcknowledged, showCalmExit, setShowCalmExit }) {
   const risk = data.checkins[0]?.risk;
   const recommendation = recommendAction(data.tasks, risk?.band);
   const restartMemory = settings.restartMemory;
@@ -521,6 +531,50 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
     setRestartAcknowledged(false);
   }
 
+  async function leaveCalmMode(destination = 'today') {
+    if (settingsBusy) return;
+    await updateSettings({ ...settings, calmMode: false });
+    setShowCalmExit(false);
+    setPausedThisSession(false);
+    setRestartAcknowledged(false);
+    go(destination);
+  }
+
+  if (settings.calmMode && showCalmExit) {
+    return <div className="calm-focus">
+      {!calmSession.reduceVisualDetail && <Mascot size={64} mood="calm" />}
+      <small>LEAVING CALM MODE</small>
+      <div className="calm-heading">How would you like to come back?</div>
+      <p>Nothing will be marked complete. Any saved restart point will stay available.</p>
+
+      <button
+        className="primary"
+        style={{ width: '100%', maxWidth: 340 }}
+        disabled={settingsBusy}
+        onClick={() => leaveCalmMode('today')}
+      >
+        Return to Today
+      </button>
+
+      <button
+        className="option"
+        style={{ width: '100%', maxWidth: 340 }}
+        disabled={settingsBusy}
+        onClick={() => leaveCalmMode('tasks')}
+      >
+        Show my tasks
+      </button>
+
+      <button
+        className="link"
+        disabled={settingsBusy}
+        onClick={() => setShowCalmExit(false)}
+      >
+        Stay in Calm Mode
+      </button>
+    </div>;
+  }
+
   if (pausedThisSession) {
     return <div className="calm-focus">
       <Leaf size={42} aria-hidden="true" />
@@ -547,7 +601,7 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
       <button
         className="link"
         disabled={settingsBusy}
-        onClick={() => updateSettings({ ...settings, calmMode: false })}
+        onClick={() => setShowCalmExit(true)}
       >
         Leave Calm Mode
       </button>
@@ -576,6 +630,9 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
 
       <button className="link" disabled={settingsBusy} onClick={clearRestartMemory}>
         Use today&apos;s suggestion instead
+      </button>
+      <button className="link" disabled={settingsBusy} onClick={() => setShowCalmExit(true)}>
+        Leave Calm Mode
       </button>
     </div>;
   }
@@ -625,7 +682,7 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
         />
       </details>
 
-      <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, calmMode: false })}>Turn off Calm Mode</button>
+      <button className="link" disabled={settingsBusy} onClick={() => setShowCalmExit(true)}>Leave Calm Mode</button>
     </div>;
   }
 

@@ -715,6 +715,114 @@ describe('Adaptive Calm Mode — Phase C stop and restart memory', () => {
 });
 
 
+
+describe('Adaptive Calm Mode — Phase D gentle exit', () => {
+  function seedExitState(restartMemory = null) {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [{
+        id: 'exit-task',
+        title: 'Draft chapter 2',
+        module: 'Dissertation',
+        due: '',
+        priority: 'normal',
+        done: false,
+        bucket: 'today',
+        currentStep: {
+          id: 'exit-step',
+          text: 'Open the document.',
+          done: false,
+          completedAt: null,
+        },
+      }],
+      checkins: [],
+      reflections: [],
+      settings: {
+        calmMode: true,
+        reducedMotion: false,
+        textScale: 1,
+        displayName: '',
+        hideProgress: false,
+        supportPersonName: '',
+        supportPersonNote: '',
+        restartMemory,
+      },
+      stats: { stepsCompleted: 0, strategyUses: {} },
+    }));
+  }
+
+  it('does not drop the student straight into the full interface when leaving Calm Mode', async () => {
+    seedExitState();
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    fireEvent.click(screen.getByRole('button', { name: 'Leave Calm Mode' }));
+
+    await screen.findByText('How would you like to come back?');
+    expect(screen.getByRole('button', { name: 'Return to Today' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show my tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stay in Calm Mode' })).toBeInTheDocument();
+  });
+
+  it('can stay in Calm Mode without changing any task data', async () => {
+    seedExitState();
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    fireEvent.click(screen.getByRole('button', { name: 'Leave Calm Mode' }));
+    await screen.findByText('How would you like to come back?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stay in Calm Mode' }));
+
+    await screen.findByText(/Calm Mode is on/);
+    expect(screen.getByRole('button', { name: 'Stop for now' })).toBeInTheDocument();
+
+    const saved = JSON.parse(localStorage.getItem('nuvora-demo-data-v1'));
+    expect(saved.tasks[0].done).toBe(false);
+    expect(saved.tasks[0].currentStep.text).toBe('Open the document.');
+  });
+
+  it('can return directly to the normal Tasks view', async () => {
+    seedExitState();
+    render(<NuvoraApp />);
+
+    await screen.findByText(/Calm Mode is on/);
+    fireEvent.click(screen.getByRole('button', { name: 'Leave Calm Mode' }));
+    await screen.findByText('How would you like to come back?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show my tasks' }));
+
+    await screen.findByText('My plan');
+    expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Learn' })).toBeInTheDocument();
+
+    const saved = JSON.parse(localStorage.getItem('nuvora-demo-data-v1'));
+    expect(saved.settings.calmMode).toBe(false);
+  });
+
+  it('preserves restart memory when leaving Calm Mode', async () => {
+    const restartMemory = {
+      taskId: 'exit-task',
+      taskTitle: 'Draft chapter 2',
+      stepText: 'Open the document.',
+      stoppedAt: '2026-09-17T20:00:00.000Z',
+    };
+    seedExitState(restartMemory);
+    render(<NuvoraApp />);
+
+    await screen.findByText('WELCOME BACK');
+    fireEvent.click(screen.getByRole('button', { name: 'Leave Calm Mode' }));
+    await screen.findByText('How would you like to come back?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Today' }));
+
+    await screen.findByText('Pick up where you left off');
+
+    const saved = JSON.parse(localStorage.getItem('nuvora-demo-data-v1'));
+    expect(saved.settings.restartMemory).toEqual(restartMemory);
+  });
+});
+
+
 describe('task-type step templates', () => {
   it('a new essay-type task gets the essay progression\'s first step, not the generic one', async () => {
     render(<NuvoraApp />);
