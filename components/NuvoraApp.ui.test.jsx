@@ -353,13 +353,13 @@ describe('task modal keyboard accessibility', () => {
   });
 });
 
-describe('Calm Mode extends beyond Today (Tasks, Learn, Progress)', () => {
+describe('Adaptive Calm Mode — Phase A', () => {
   function seedRichState(calmMode) {
     const now = new Date();
     const inDays = n => { const d = new Date(now); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
     localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
       tasks: [
-        { id: 't1', title: 'Today task', module: 'Other', due: inDays(0), priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'A visible step preview', done: false, completedAt: null } },
+        { id: 't1', title: 'Today task', module: 'Other', due: inDays(-1), priority: 'high', done: false, bucket: 'today', currentStep: { id: 's1', text: 'A visible step preview', done: false, completedAt: null } },
         { id: 't2', title: 'Later task', module: 'Other', due: inDays(20), priority: 'normal', done: false, bucket: 'later', currentStep: { id: 's2', text: 'x', done: false, completedAt: null } },
       ],
       checkins: [{ id: 'c1', answers: {}, risk: { score: 40, band: 'Moderate', factors: { workload: 40, taskInitiation: 40, focus: 40, rest: 40, confidence: 40 }, message: 'x' }, createdAt: now.toISOString() }],
@@ -369,63 +369,110 @@ describe('Calm Mode extends beyond Today (Tasks, Learn, Progress)', () => {
     }));
   }
 
-  it('Tasks: hides the week/later tabs and each task\'s step preview by default, both reachable via a link', async () => {
+  it('replaces the five-item navigation with only My step and Support', async () => {
     seedRichState(true);
     render(<NuvoraApp />);
+
     await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
-    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
+
+    expect(screen.getByRole('button', { name: 'My step' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Support' })).toBeInTheDocument();
+
+    expect(screen.queryByRole('button', { name: 'Tasks' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Learn' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Progress' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the plan reachable from the single-step screen', async () => {
+    seedRichState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
+
+    await screen.findByText('My plan');
+    expect(screen.getByText('Today task')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'My step' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Support' })).toBeInTheDocument();
+  });
+
+  it('hides deadline, priority and step-detail pressure cues in the Calm plan', async () => {
+    seedRichState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
     await screen.findByText('My plan');
 
-    expect(screen.queryByRole('button', { name: 'week' })).not.toBeInTheDocument();
+    expect(screen.getByText('Other')).toBeInTheDocument();
+    expect(screen.queryByText(/Overdue/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/High priority/i)).not.toBeInTheDocument();
     expect(screen.queryByText('A visible step preview')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Show week & later'));
-    expect(screen.getByRole('button', { name: 'week' })).toBeInTheDocument();
   });
 
-  it('Learn: keeps optional study tools collapsed by default', async () => {
+  it('does not change the task data when Calm Mode hides pressure metadata', async () => {
     seedRichState(true);
     render(<NuvoraApp />);
+
     await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
-    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
-    await screen.findByText('What would help right now?');
+    fireEvent.click(screen.getByRole('button', { name: 'Open my plan' }));
+    await screen.findByText('My plan');
 
-    expect(screen.getByText('Reset Space')).toBeInTheDocument();
-    expect(screen.getByText('More study tools')).toBeInTheDocument();
-    expect(screen.queryByText('The 2-minute start')).not.toBeInTheDocument();
-    expect(screen.queryByText('Shrink the assignment')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Overdue/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/High priority/i)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
-    expect(await screen.findByText('The 2-minute start')).toBeInTheDocument();
-    expect(screen.getByText('Shrink the assignment')).toBeInTheDocument();
-    expect(screen.getByText('Low-energy version')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode off' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Overdue/i)).toBeInTheDocument();
+      expect(screen.getByText(/High priority/i)).toBeInTheDocument();
+      expect(screen.getByText('A visible step preview')).toBeInTheDocument();
+    });
   });
 
-  it('Progress: collapses strategies and trend history behind one link', async () => {
-    seedRichState(true);
-    render(<NuvoraApp />);
-    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
-    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
-    await screen.findByText('Progress, without pressure');
-
-    expect(screen.queryByText('Helpful strategies')).not.toBeInTheDocument();
-    expect(screen.queryByText('Recent pressure patterns')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Show trends & strategies'));
-    expect(screen.getByText('Helpful strategies')).toBeInTheDocument();
-    expect(screen.getByText('Recent pressure patterns')).toBeInTheDocument();
-  });
-
-  it('none of this hides anything when Calm Mode is off — same screens show full detail by default', async () => {
+  it('returns to the single-step Today view when Calm Mode is enabled from Tasks', async () => {
     seedRichState(false);
     render(<NuvoraApp />);
+
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
     await screen.findByText('My plan');
-    expect(screen.getByRole('button', { name: 'week' })).toBeInTheDocument();
-    expect(screen.getByText('A visible step preview')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode on' }));
+
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    expect(screen.queryByText('My plan')).not.toBeInTheDocument();
+  });
+
+  it('returns to the single-step Today view when Calm Mode is enabled from Learn', async () => {
+    seedRichState(false);
+    render(<NuvoraApp />);
+
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    await screen.findByText('What would help right now?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode on' }));
+
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    expect(screen.queryByText('What would help right now?')).not.toBeInTheDocument();
+  });
+
+  it('returns to the single-step Today view when Calm Mode is enabled from Progress', async () => {
+    seedRichState(false);
+    render(<NuvoraApp />);
+
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    await screen.findByText('Progress, without pressure');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn Calm Mode on' }));
+
+    await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
+    expect(screen.queryByText('Progress, without pressure')).not.toBeInTheDocument();
   });
 });
+
 
 describe('task-type step templates', () => {
   it('a new essay-type task gets the essay progression\'s first step, not the generic one', async () => {

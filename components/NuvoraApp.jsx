@@ -28,6 +28,7 @@ const questions = [
   { id: 'confidence', title: 'How confident do you feel about this week?', max: 5, low: 'Not confident', high: 'Confident' },
 ];
 const nav = [['today', Home, 'Today'], ['tasks', ListTodo, 'Tasks'], ['learn', BookOpen, 'Learn'], ['progress', TrendingUp, 'Progress'], ['support', Heart, 'Support']];
+const calmNav = [['today', Home, 'My step'], ['support', Heart, 'Support']];
 const priorities = [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']];
 const BARRIERS = [
   { id: 'start', label: 'I do not know where to start' },
@@ -175,6 +176,7 @@ export default function NuvoraApp() {
   // Checkin screen itself) so that leaving and returning to the check-in
   // within the same session does not lose what was already answered.
   const [checkinDraft, setCheckinDraft] = useState({ step: 0, answers: {} });
+  const previousCalmModeRef = useRef(settings.calmMode);
 
   // A subtle offline notice. On the web, Nuvora intentionally keeps the
   // default session-only Firestore cache rather than enabling persistent
@@ -194,6 +196,20 @@ export default function NuvoraApp() {
       window.removeEventListener('offline', goOffline);
     };
   }, []);
+
+  // Calm Mode is a temporary demand-reduction layer. If the student turns
+  // it on while viewing a choice-heavy screen, return to the single-step
+  // Today view once. Deliberate navigation after that (for example "Open my
+  // plan") remains available and is not bounced back.
+  useEffect(() => {
+    const justEnabled = settings.calmMode && !previousCalmModeRef.current;
+    previousCalmModeRef.current = settings.calmMode;
+
+    if (justEnabled && ['tasks', 'learn', 'progress'].includes(screen)) {
+      setScreen('today');
+      setMenu(false);
+    }
+  }, [settings.calmMode, screen]);
 
   useEffect(() => (firebaseEnabled ? onAuthStateChanged(auth, setUser) : undefined), []);
 
@@ -243,6 +259,7 @@ export default function NuvoraApp() {
   if (!data) return <Splash />;
 
   const go = s => { setScreen(s); setMenu(false); };
+  const visibleNav = settings.calmMode ? calmNav : nav;
 
   async function updateSettings(next) {
     if (settingsBusy) return;
@@ -295,7 +312,7 @@ export default function NuvoraApp() {
         {screen === 'privacy' && <Privacy uid={user.uid} data={data} setData={setData} updateSettings={updateSettings} go={go} />}
         {screen === 'overwhelmed' && <Overwhelmed data={data} uid={user.uid} setData={setData} go={go} settings={settings} />}
       </div>
-      {!['checkin', 'overwhelmed', 'settings', 'reflection', 'privacy'].includes(screen) && <nav>{nav.map(([id, I, label]) => <button key={id} className={screen === id ? 'active' : ''} onClick={() => go(id)}><I /><span>{label}</span></button>)}</nav>}
+      {!['checkin', 'overwhelmed', 'settings', 'reflection', 'privacy'].includes(screen) && <nav className={settings.calmMode ? 'calm-nav' : ''}>{visibleNav.map(([id, I, label]) => <button key={id} className={screen === id ? 'active' : ''} onClick={() => go(id)}><I aria-hidden="true" /><span>{label}</span></button>)}</nav>}
     </section>
   </main>;
 }
@@ -713,7 +730,10 @@ function Tasks({ data, uid, setData, calmMode }) {
           <span className="check-dot">{t.done && <Check />}</span>
         </button>
         <div>
-          <small>{t.module} · {relativeDueLabel(t.due)}{t.priority === 'high' && ' · High priority'}</small>
+          <small>
+            {t.module}
+            {!calmMode && <>{' · '}{relativeDueLabel(t.due)}{t.priority === 'high' && ' · High priority'}</>}
+          </small>
           <h2>{t.title}</h2>
           {!calmMode && <p>{t.currentStep?.text}</p>}
         </div>
