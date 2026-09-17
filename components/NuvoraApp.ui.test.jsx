@@ -162,48 +162,78 @@ describe('live status messages carry the correct ARIA role', () => {
 describe('offline banner', () => {
   it('does not show when navigator.onLine is unknown (e.g. stubbed without it) — assumes online', async () => {
     render(<NuvoraApp />);
+
     await screen.findByText('How are things feeling, there?');
-    expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument();
+
+    expect(
+      screen.queryByText(/You’re offline/)
+    ).not.toBeInTheDocument();
   });
 
   it('shows when the browser goes offline, and hides again when back online', async () => {
     render(<NuvoraApp />);
+
     await screen.findByText('How are things feeling, there?');
-    expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument();
+
+    expect(
+      screen.queryByText(/You’re offline/)
+    ).not.toBeInTheDocument();
 
     fireEvent(window, new Event('offline'));
-    await screen.findByText(/You’re offline\. Some saves may wait until you reconnect\. Keep this page open — offline data is not stored between browser sessions\./);
+
+    await screen.findByText(
+      /You’re offline\. Some saves may wait until you reconnect\./
+    );
 
     fireEvent(window, new Event('online'));
-    await waitFor(() => expect(screen.queryByText(/You’re offline/)).not.toBeInTheDocument());
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/You’re offline/)
+      ).not.toBeInTheDocument()
+    );
   });
 });
+
 
 describe('privacy: offline storage is explained clearly', () => {
   it('explains that signed-in mode does not persist an offline browser cache by default', async () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
+
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     fireEvent.click(await screen.findByText('Privacy & data'));
     await screen.findByRole('heading', { name: 'Privacy & data' });
 
     fireEvent.click(screen.getByText('Offline storage'));
-    expect(screen.getByText(/Signed-in Firebase mode does not enable persistent browser caching by default/)).toBeInTheDocument();
+
+    expect(
+      screen.getByText(
+        /Signed-in Firebase mode does not enable persistent browser caching by default/
+      )
+    ).toBeInTheDocument();
   });
 });
 
 describe('navigation: every screen reachable without the bottom nav must have a way back', () => {
-  // Regression test: Settings had no way back to Today at all — the
-  // bottom nav is deliberately hidden on it (like Check-in, Overwhelmed
-  // Mode, Reflection, and Privacy), but unlike those screens it had no
-  // "back" button either, making it a genuine dead end reachable only by
-  // reloading the page. Every screen in this hidden-from-nav list must
-  // have a working way back.
-  const screensToCheck = [
-    { openVia: 'Accessibility settings', arriveAt: 'Calm accessibility settings' },
-    { openVia: 'Privacy & data', arriveAt: 'Privacy & data' },
-  ];
+  // Regression test: Settings had no way back to Today at all —
+  // the bottom nav is deliberately hidden on it (like Check-in,
+  // Overwhelmed Mode, Reflection, and Privacy), but unlike those screens
+  // it had no "back" button either, making it a genuine dead end reachable
+  // only by reloading the page. Every screen in this hidden-from-nav list
+  // must have a working way back.
 
+  const screensToCheck = [
+    {
+      openVia: 'Accessibility settings',
+      arriveAt: 'Calm accessibility settings',
+    },
+    {
+      openVia: 'Privacy & data',
+      arriveAt: 'Privacy & data',
+    },
+  ];
+  
   for (const { openVia, arriveAt } of screensToCheck) {
     it(`${openVia}: has a working way back to Today`, async () => {
       render(<NuvoraApp />);
@@ -236,7 +266,12 @@ describe('task modal keyboard accessibility', () => {
     const taskName = within(dialog).getByLabelText('Task name');
     expect(taskName).toHaveFocus();
 
-    const focusable = Array.from(dialog.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+    const focusable = Array.from(
+      dialog.querySelectorAll(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
+
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
 
@@ -249,30 +284,71 @@ describe('task modal keyboard accessibility', () => {
     expect(last).toHaveFocus();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add task' })).not.toBeInTheDocument());
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Add task' })
+      ).not.toBeInTheDocument()
+    );
+
     expect(addButton).toHaveFocus();
   });
 
   it('returns focus to the specific Edit button that opened the dialog', async () => {
-    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
-      tasks: [{ id: 't1', title: 'Draft chapter 2', module: 'Dissertation', due: '', priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'Open the document.', done: false, completedAt: null } }],
-      checkins: [], reflections: [], settings: {}, stats: {},
-    }));
+    localStorage.setItem(
+      'nuvora-demo-data-v1',
+      JSON.stringify({
+        tasks: [
+          {
+            id: 't1',
+            title: 'Draft chapter 2',
+            module: 'Dissertation',
+            due: '',
+            priority: 'normal',
+            done: false,
+            bucket: 'today',
+            currentStep: {
+              id: 's1',
+              text: 'Open the document.',
+              done: false,
+              completedAt: null,
+            },
+          },
+        ],
+        checkins: [],
+        reflections: [],
+        settings: {},
+        stats: {},
+      })
+    );
 
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
+
     fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
     await screen.findByText('My plan');
 
-    const editButton = screen.getByRole('button', { name: 'Edit Draft chapter 2' });
+    const editButton = screen.getByRole('button', {
+      name: 'Edit Draft chapter 2',
+    });
+
     editButton.focus();
     fireEvent.click(editButton);
 
-    const dialog = await screen.findByRole('dialog', { name: 'Edit Draft chapter 2' });
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Edit Draft chapter 2',
+    });
+
     expect(within(dialog).getByLabelText('Task name')).toHaveFocus();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit Draft chapter 2' })).not.toBeInTheDocument());
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Edit Draft chapter 2' })
+      ).not.toBeInTheDocument()
+    );
+
     expect(editButton).toHaveFocus();
   });
 });
@@ -307,19 +383,22 @@ describe('Calm Mode extends beyond Today (Tasks, Learn, Progress)', () => {
     expect(screen.getByRole('button', { name: 'week' })).toBeInTheDocument();
   });
 
-  it('Learn: shows only the first activity by default, with a link to see the rest', async () => {
+  it('Learn: keeps optional study tools collapsed by default', async () => {
     seedRichState(true);
     render(<NuvoraApp />);
     await screen.findByText('Calm Mode is on — only one thing is shown at a time.');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
-    await screen.findByText('The 2-minute start');
+    await screen.findByText('What would help right now?');
 
-    expect(screen.queryByText('Shrink the assignment')).not.toBeInTheDocument();
-    expect(screen.queryByText('Reset Space')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Show other small resets'));
-    expect(screen.getByText('Shrink the assignment')).toBeInTheDocument();
     expect(screen.getByText('Reset Space')).toBeInTheDocument();
+    expect(screen.getByText('More study tools')).toBeInTheDocument();
+    expect(screen.queryByText('The 2-minute start')).not.toBeInTheDocument();
+    expect(screen.queryByText('Shrink the assignment')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
+    expect(await screen.findByText('The 2-minute start')).toBeInTheDocument();
+    expect(screen.getByText('Shrink the assignment')).toBeInTheDocument();
+    expect(screen.getByText('Low-energy version')).toBeInTheDocument();
   });
 
   it('Progress: collapses strategies and trend history behind one link', async () => {
@@ -430,39 +509,57 @@ describe('barrier-history-aware Overwhelmed Mode ordering', () => {
 describe('Overwhelmed Mode priority-task consistency', () => {
   it('uses the same priority task as the shared recommendation logic rather than the first unfinished task in storage', async () => {
     const now = new Date();
+
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
+
     const later = new Date(now);
     later.setDate(later.getDate() + 14);
 
-    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
-      tasks: [
-        {
-          id: 'later-task',
-          title: 'Read optional article',
-          module: 'Other',
-          due: later.toISOString().slice(0, 10),
-          priority: 'low',
-          done: false,
-          bucket: 'later',
-          currentStep: { id: 'later-step', text: 'Open the article.', done: false, completedAt: null },
+    localStorage.setItem(
+      'nuvora-demo-data-v1',
+      JSON.stringify({
+        tasks: [
+          {
+            id: 'later-task',
+            title: 'Read optional article',
+            module: 'Other',
+            due: later.toISOString().slice(0, 10),
+            priority: 'low',
+            done: false,
+            bucket: 'later',
+            currentStep: {
+              id: 'later-step',
+              text: 'Open the article.',
+              done: false,
+              completedAt: null,
+            },
+          },
+          {
+            id: 'urgent-task',
+            title: 'Submit dissertation draft',
+            module: 'Dissertation',
+            due: tomorrow.toISOString().slice(0, 10),
+            priority: 'high',
+            done: false,
+            bucket: 'today',
+            currentStep: {
+              id: 'urgent-step',
+              text: 'Open the dissertation document.',
+              done: false,
+              completedAt: null,
+            },
+          },
+        ],
+        checkins: [],
+        reflections: [],
+        settings: {},
+        stats: {
+          stepsCompleted: 0,
+          strategyUses: {},
         },
-        {
-          id: 'urgent-task',
-          title: 'Submit dissertation draft',
-          module: 'Dissertation',
-          due: tomorrow.toISOString().slice(0, 10),
-          priority: 'high',
-          done: false,
-          bucket: 'today',
-          currentStep: { id: 'urgent-step', text: 'Open the dissertation document.', done: false, completedAt: null },
-        },
-      ],
-      checkins: [],
-      reflections: [],
-      settings: {},
-      stats: { stepsCompleted: 0, strategyUses: {} },
-    }));
+      })
+    );
 
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
@@ -471,11 +568,15 @@ describe('Overwhelmed Mode priority-task consistency', () => {
     fireEvent.click(screen.getByText('I do not know where to start'));
 
     expect(
-      screen.getByText('Just open "Submit dissertation draft". Nothing else needed.')
+      screen.getByText(
+        'Just open "Submit dissertation draft". Nothing else needed.'
+      )
     ).toBeInTheDocument();
 
     expect(
-      screen.queryByText('Just open "Read optional article". Nothing else needed.')
+      screen.queryByText(
+        'Just open "Read optional article". Nothing else needed.'
+      )
     ).not.toBeInTheDocument();
   });
 });
@@ -506,6 +607,7 @@ describe('Small resets are tied to the student\'s actual current task', () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
     await screen.findByText('The 2-minute start');
 
     expect(screen.getByText(/Don't finish "Draft chapter 2"/)).toBeInTheDocument();
@@ -519,6 +621,7 @@ describe('Small resets are tied to the student\'s actual current task', () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
     await screen.findByText('The 2-minute start');
 
     expect(screen.getByText("Don't finish the task. Open it and identify only the first action.")).toBeInTheDocument();
@@ -530,6 +633,7 @@ describe('Small resets are tied to the student\'s actual current task', () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
     await screen.findByText('Shrink the assignment');
     fireEvent.click(screen.getByRole('button', { name: 'Use this as my next step' }));
     await screen.findByText('Saved as your next step for this task.');
@@ -544,6 +648,7 @@ describe('Small resets are tied to the student\'s actual current task', () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
     await screen.findByText('Low-energy version');
     fireEvent.click(screen.getByRole('button', { name: 'I did this' }));
     await screen.findByText(/That step is done/);
@@ -558,10 +663,12 @@ describe('Small resets are tied to the student\'s actual current task', () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
     await screen.findByText('The 2-minute start');
     expect(screen.queryByText('Start activity')).not.toBeInTheDocument();
   });
 });
+
 
 describe('final accessibility hardening', () => {
   it('exposes the header Calm Mode control as a real pressed-state toggle', async () => {
@@ -586,3 +693,4 @@ describe('final accessibility hardening', () => {
     });
   });
 });
+

@@ -929,7 +929,7 @@ function FocusTimer({ seconds = 120 }) {
 }
 
 function Learn({ calmMode, data, uid, setData, go }) {
-  const [showAll, setShowAll] = useState(false);
+  const [showMoreTools, setShowMoreTools] = useState(false);
   const [busy, setBusy] = useState(false);
   const [shrinkStatus, setShrinkStatus] = useState({ text: '', tone: 'status' });
   const [lowEnergyStatus, setLowEnergyStatus] = useState({ text: '', tone: 'status' });
@@ -1137,7 +1137,6 @@ function Learn({ calmMode, data, uid, setData, go }) {
 
   const [pick, ...rest] = allActivities;
   const ACTIVITY_COLORS = ['teal', 'amber', 'blue'];
-  const showRest = !calmMode || showAll;
 
   return <>
     <div className="page-title"><h1>Learn</h1><Leaf /></div>
@@ -1160,36 +1159,57 @@ function Learn({ calmMode, data, uid, setData, go }) {
 
     {renderSupportPanel()}
 
-    <div className="all-activities-label">QUICK ACTIVITIES</div>
-    <div className="pick-card">
-      <div className="pick-label"><span>TODAY'S PICK</span></div>
-      <h2 style={{ margin: 0 }}>{pick.title}</h2>
-      {pick.body}
+    <article className="panel">
+      <h2>Reset Space</h2>
+      <p>Need a little more space before studying? You can pause here without starting another task.</p>
+      <details>
+        <summary>Wellbeing and sensory resources — optional</summary>
+        <p className="hint">These resources open outside Nuvora and are completely optional.</p>
+        <a className="option" href="https://www.nhs.uk/every-mind-matters/" target="_blank" rel="noopener noreferrer">NHS Every Mind Matters ↗</a>
+        <a className="option" href="https://www.adhdfoundation.org.uk/resources/" target="_blank" rel="noopener noreferrer">ADHD Foundation resources ↗</a>
+        <a className="option" href="https://www.autism.org.uk/advice-and-guidance/about-autism/sensory-processing" target="_blank" rel="noopener noreferrer">National Autistic Society: sensory processing ↗</a>
+      </details>
+      <p className="hint">External resources are optional and are not a replacement for professional support.</p>
+    </article>
+
+    <div className="panel">
+      <h2>More study tools</h2>
+      <p className="hint">Optional activities for when you want another way to get started. You do not need to use these.</p>
+      <button
+        type="button"
+        className="option"
+        aria-expanded={showMoreTools}
+        onClick={() => setShowMoreTools(value => !value)}
+      >
+        {showMoreTools ? 'Hide study tools' : 'Show more study tools'}
+      </button>
     </div>
 
-    {showRest && <>
-      <div className="all-activities-label">ALL ACTIVITIES</div>
-      {rest.map((a, i) => <article className="activity" data-color={ACTIVITY_COLORS[i % ACTIVITY_COLORS.length]} key={a.title}>
-        <div>{i + 2}</div>
-        <details>
-          <summary><small>{a.badge}</small><h2>{a.title}</h2></summary>
-          <section>{a.body}</section>
-        </details>
-      </article>)}
-    </>}
-    {calmMode && !showAll
-      ? <button className="link" onClick={() => setShowAll(true)}>Show other small resets</button>
-      : <article className="panel">
-        <h2>Reset Space</h2>
-        <p>For a guided breathing exercise or a longer break, the NHS's Every Mind Matters has free wellbeing resources.</p>
-        <a className="option" href="https://www.nhs.uk/every-mind-matters/" target="_blank" rel="noopener noreferrer">Open Every Mind Matters (opens in a new tab, leaves Nuvora) ↗</a>
-        <details>
-          <summary>More trusted resources — optional</summary>
-          <a className="option" href="https://www.adhdfoundation.org.uk/resources/" target="_blank" rel="noopener noreferrer">ADHD Foundation resources ↗</a>
-          <a className="option" href="https://www.autism.org.uk/advice-and-guidance/about-autism/sensory-processing" target="_blank" rel="noopener noreferrer">National Autistic Society: sensory processing ↗</a>
-        </details>
-        <p className="hint">External websites are optional and are not a replacement for professional support.</p>
-      </article>}
+    {showMoreTools && (
+      <>
+        <div className="all-activities-label">SUGGESTED TOOL</div>
+        <div className="pick-card">
+          <div className="pick-label"><span>GENTLE START</span></div>
+          <h2 style={{ margin: 0 }}>{pick.title}</h2>
+          {pick.body}
+        </div>
+
+        <div className="all-activities-label">OTHER STUDY TOOLS</div>
+        {rest.map((activity, index) => (
+          <article
+            className="activity"
+            data-color={ACTIVITY_COLORS[index % ACTIVITY_COLORS.length]}
+            key={activity.title}
+          >
+            <div>{index + 2}</div>
+            <details>
+              <summary><small>{activity.badge}</small><h2>{activity.title}</h2></summary>
+              <section>{activity.body}</section>
+            </details>
+          </article>
+        ))}
+      </>
+    )}
   </>;
 }
 
