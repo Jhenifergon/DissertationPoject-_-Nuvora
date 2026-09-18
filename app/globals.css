@@ -20,8 +20,8 @@
    --------------------------------------------------------------------- */
 :root {
   /* Surfaces */
-  --nuvora-bg: #efebe4;
-  --nuvora-bg-soft: #f5f3f0; /* Calm Mode's page background */
+  --nuvora-bg: #faf7f0;
+  --nuvora-bg-soft: #fcfaf5; /* Calm Mode's page background */
   --nuvora-surface: #ffffff;
 
   /* Purple — primary accent */
@@ -795,3 +795,762 @@ nav button.active::after {
     padding-right: 22px;
   }
 }
+
+
+/* =====================================================================
+   Nuvora visual polish — richer page identity without adding noise
+   ===================================================================== */
+
+/* Page headers now act as gentle colour anchors. The cloud mascot is the
+   consistent brand marker, while the small functional icon identifies
+   the section. */
+.page-title-card {
+  position: relative;
+  min-height: 104px;
+  margin: 4px 0 18px;
+  padding: 18px 18px 16px;
+  border-radius: 24px;
+  overflow: hidden;
+  gap: 14px;
+  border: 1px solid rgba(58,58,66,.055);
+  box-shadow: 0 8px 24px rgba(46,46,56,.055);
+}
+
+.page-title-card::before,
+.page-title-card::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: .48;
+}
+
+.page-title-card::before {
+  width: 110px;
+  height: 110px;
+  right: -34px;
+  top: -46px;
+  background: rgba(255,255,255,.55);
+}
+
+.page-title-card::after {
+  width: 58px;
+  height: 58px;
+  right: 58px;
+  bottom: -30px;
+  background: rgba(255,255,255,.35);
+}
+
+.page-title-card[data-tone="lavender"] {
+  background: linear-gradient(135deg, #f4f0ff 0%, #ebe7ff 100%);
+}
+.page-title-card[data-tone="teal"] {
+  background: linear-gradient(135deg, #edf8f5 0%, #def1ed 100%);
+}
+.page-title-card[data-tone="amber"] {
+  background: linear-gradient(135deg, #fff7e9 0%, #f9ead1 100%);
+}
+.page-title-card[data-tone="blue"] {
+  background: linear-gradient(135deg, #f1f5ff 0%, #e5edff 100%);
+}
+
+.page-title-copy {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+}
+
+.page-title-copy small {
+  margin-bottom: 5px;
+  color: var(--nuvora-text-secondary);
+  letter-spacing: .08em;
+}
+
+.page-title-card h1 {
+  margin: 0;
+  font-size: 1.48em;
+  line-height: 1.18;
+}
+
+.page-title-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.page-title-cloud {
+  width: 72px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  border-radius: 22px;
+  background: rgba(255,255,255,.56);
+  border: 1px solid rgba(255,255,255,.72);
+  box-shadow: 0 5px 16px rgba(46,46,56,.06);
+}
+
+.page-title-cloud .mascot {
+  filter: drop-shadow(0 5px 8px rgba(91,79,209,.12));
+}
+
+.page-title-icon {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  color: var(--nuvora-purple-dark);
+  box-shadow: 0 4px 12px rgba(46,46,56,.12);
+}
+
+.page-title-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.page-title-action {
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 5px 14px rgba(91,79,209,.18);
+}
+
+/* Today gets its own friendly hero instead of a plain heading/initial. */
+.welcome-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(244,240,255,.9), rgba(234,246,244,.9));
+  border: 1px solid rgba(110,98,229,.08);
+  border-radius: 24px;
+  padding: 17px 16px 13px;
+  margin: 2px 0 14px;
+  overflow: hidden;
+}
+
+.welcome-card::after {
+  content: "";
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  border-radius: 999px;
+  right: -30px;
+  top: -38px;
+  background: rgba(255,255,255,.38);
+}
+
+.welcome-card > div:first-child {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+}
+
+.welcome-card h1 {
+  margin: 3px 0 5px;
+  font-size: 1.42em;
+  max-width: 285px;
+}
+
+.welcome-cloud {
+  position: relative;
+  z-index: 1;
+  width: 70px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 20px;
+  background: rgba(255,255,255,.52);
+}
+
+/* More colour, but only on cards whose meaning benefits from it. */
+.panel-lavender {
+  background: linear-gradient(180deg, #fbfaff 0%, #f3f0ff 100%);
+  border-color: rgba(110,98,229,.10);
+}
+
+.panel-teal {
+  background: linear-gradient(180deg, #fbfffe 0%, #edf8f5 100%);
+  border-color: rgba(78,158,147,.12);
+}
+
+.panel-amber {
+  background: linear-gradient(180deg, #fffdf9 0%, #fff5e6 100%);
+  border-color: rgba(185,142,69,.13);
+}
+
+.panel-blue {
+  background: linear-gradient(180deg, #fbfcff 0%, #eef3ff 100%);
+  border-color: rgba(91,127,224,.12);
+}
+
+/* Learn choices: pastel differentiation helps scanning without turning the
+   screen into a rainbow. Selected states retain strong purple contrast. */
+.scale-vertical .option:nth-child(1) {
+  background: #f5f1ff;
+}
+.scale-vertical .option:nth-child(2) {
+  background: #eef8f6;
+}
+.scale-vertical .option:nth-child(3) {
+  background: #fff7e9;
+}
+.scale-vertical .option:nth-child(4) {
+  background: #eef4ff;
+}
+.scale-vertical .option:nth-child(5) {
+  background: #f7f2fb;
+}
+.scale-vertical .option:nth-child(6) {
+  background: #f5f4f1;
+}
+
+.scale-vertical .option.selected {
+  background: var(--nuvora-lavender);
+  border-color: var(--nuvora-purple);
+  box-shadow: 0 0 0 2px rgba(110,98,229,.08);
+}
+
+/* A little more identity on common action surfaces. */
+.checkin-card {
+  background: linear-gradient(135deg, #f4f0ff 0%, #edf4ff 100%);
+  border: 1px solid rgba(110,98,229,.09);
+}
+
+.checkin-card svg {
+  background: rgba(255,255,255,.62);
+  border-radius: 999px;
+  padding: 7px;
+  width: 34px;
+  height: 34px;
+}
+
+.task.focus {
+  background: linear-gradient(135deg, #f7f4ff 0%, #f0edff 100%);
+}
+
+.support-card {
+  background: linear-gradient(135deg, #f5f1ff 0%, #eef8f6 100%);
+}
+
+/* Nav remains simple, but every section has a slightly different active
+   tint so the app feels more alive without adding extra labels. */
+nav button:nth-child(1).active { background: #f1edff; }
+nav button:nth-child(2).active { background: #eef4ff; }
+nav button:nth-child(3).active { background: #f3efff; }
+nav button:nth-child(4).active { background: #edf8f5; }
+nav button:nth-child(5).active { background: #fff5e6; }
+
+/* Small-screen tuning for the richer header. */
+@media (max-width: 380px) {
+  .page-title-card {
+    min-height: 94px;
+    padding: 15px;
+  }
+
+  .page-title-cloud {
+    width: 62px;
+    height: 56px;
+  }
+
+  .page-title-cloud .mascot {
+    transform: scale(.9);
+  }
+
+  .page-title-card h1 {
+    font-size: 1.32em;
+  }
+}
+
+
+/* =====================================================================
+   Auth / entry experience
+   ===================================================================== */
+
+body {
+  background: #faf7f0;
+}
+
+.auth-shell {
+  background:
+    radial-gradient(circle at 12% 16%, rgba(237,234,252,.72) 0 90px, transparent 91px),
+    radial-gradient(circle at 88% 82%, rgba(234,246,244,.72) 0 110px, transparent 111px),
+    var(--nuvora-bg);
+}
+
+.auth-phone {
+  padding: 20px 22px 28px;
+  overflow-y: auto;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,255,255,.08)),
+    var(--nuvora-bg);
+}
+
+.auth-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 14px;
+}
+
+.auth-brand-row .logo {
+  font-size: 1.2em;
+}
+
+.auth-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  margin-bottom: 16px;
+  border-radius: 26px;
+  background: linear-gradient(135deg, #f3efff 0%, #edf8f5 100%);
+  border: 1px solid rgba(110,98,229,.08);
+  box-shadow: 0 10px 28px rgba(58,58,66,.06);
+  overflow: hidden;
+}
+
+.auth-hero::after {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  right: -52px;
+  top: -62px;
+  background: rgba(255,255,255,.42);
+  pointer-events: none;
+}
+
+.auth-hero-reset {
+  background: linear-gradient(135deg, #fff6e8 0%, #f3efff 100%);
+}
+
+.auth-cloud-wrap {
+  width: 86px;
+  height: 82px;
+  border-radius: 25px;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,.62);
+  border: 1px solid rgba(255,255,255,.8);
+  box-shadow: 0 8px 20px rgba(91,79,209,.08);
+  position: relative;
+  z-index: 1;
+}
+
+.auth-cloud-wrap .mascot {
+  filter: drop-shadow(0 6px 9px rgba(91,79,209,.14));
+}
+
+.auth-hero > div:last-child {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.auth-hero small {
+  color: var(--nuvora-purple-dark);
+  margin-bottom: 5px;
+}
+
+.auth-hero h1 {
+  font-size: 1.45em;
+  margin: 0 0 7px;
+  line-height: 1.2;
+}
+
+.auth-hero p {
+  margin: 0;
+  font-size: .9em;
+}
+
+.auth-card {
+  background: rgba(255,255,255,.76);
+  border: 1px solid rgba(58,58,66,.07);
+  border-radius: 24px;
+  padding: 18px;
+  box-shadow: 0 10px 28px rgba(58,58,66,.055);
+}
+
+.auth-tabs {
+  margin: 0 0 16px;
+  background: #eee9ff;
+}
+
+.auth-tabs button {
+  min-height: 44px;
+}
+
+.auth-tabs button.active {
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(58,58,66,.08);
+}
+
+.auth input {
+  background: #fffdf9;
+  border-color: rgba(58,58,66,.13);
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.auth input:focus {
+  outline: none;
+  border-color: var(--nuvora-purple);
+  box-shadow: 0 0 0 3px rgba(110,98,229,.12);
+  background: #fff;
+}
+
+.auth-forgot-link,
+.auth-back-link {
+  min-height: 44px;
+  padding: 8px 0;
+  margin-top: -6px;
+  justify-content: flex-start;
+}
+
+.auth-submit {
+  margin-top: 16px;
+}
+
+.auth-note {
+  margin-top: 16px;
+  padding: 11px 12px;
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  border-radius: 16px;
+  background: var(--nuvora-teal-soft);
+  color: var(--nuvora-teal-text);
+  font-size: .78em;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.auth-note svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  margin-top: 1px;
+}
+
+/* Keep the app's internal surfaces warm and lighter too. */
+.phone,
+header {
+  background-color: var(--nuvora-bg);
+}
+
+@media (max-width: 380px) {
+  .auth-phone {
+    padding: 16px;
+  }
+
+  .auth-hero {
+    grid-template-columns: 72px 1fr;
+    padding: 15px;
+    gap: 12px;
+  }
+
+  .auth-cloud-wrap {
+    width: 68px;
+    height: 66px;
+  }
+
+  .auth-cloud-wrap .mascot {
+    transform: scale(.82);
+  }
+
+  .auth-hero h1 {
+    font-size: 1.28em;
+  }
+
+  .auth-card {
+    padding: 15px;
+  }
+}
+
+
+/* =====================================================================
+   Calm Mode — refined visual hierarchy
+   ===================================================================== */
+
+.calm-focus {
+  padding-top: 16px;
+}
+
+.calm-layout {
+  width: 100%;
+  max-width: 356px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.calm-hero {
+  display: grid;
+  grid-template-columns: 1fr 92px;
+  align-items: center;
+  gap: 12px;
+  padding: 17px 18px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 92% 4%, rgba(255,255,255,.62) 0 42px, transparent 43px),
+    linear-gradient(135deg, #efeaff 0%, #e7f5f1 100%);
+  border: 1px solid rgba(110,98,229,.08);
+  box-shadow: 0 10px 26px rgba(58,58,66,.055);
+  overflow: hidden;
+}
+
+.calm-hero-copy {
+  min-width: 0;
+}
+
+.calm-hero-copy small {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--nuvora-purple-dark);
+  letter-spacing: .08em;
+}
+
+.calm-hero .calm-heading {
+  margin: 0 0 5px;
+  font-size: 1.18em;
+  text-align: left;
+}
+
+.calm-hero p {
+  margin: 0;
+  color: var(--nuvora-text-secondary);
+  font-size: .84em;
+  line-height: 1.45;
+}
+
+.calm-hero-cloud {
+  width: 86px;
+  height: 78px;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  background: rgba(255,255,255,.58);
+  border: 1px solid rgba(255,255,255,.75);
+  box-shadow: 0 7px 18px rgba(91,79,209,.08);
+}
+
+.calm-hero-cloud .mascot {
+  filter: drop-shadow(0 6px 8px rgba(91,79,209,.12));
+}
+
+.calm-task-card {
+  position: relative;
+  overflow: hidden;
+  padding: 20px;
+  border-radius: 24px;
+  background: #fffdf9;
+  border: 1px solid rgba(58,58,66,.075);
+  box-shadow: 0 10px 26px rgba(58,58,66,.055);
+  text-align: left;
+}
+
+.calm-task-card::before {
+  content: "";
+  position: absolute;
+  width: 86px;
+  height: 86px;
+  border-radius: 999px;
+  right: -30px;
+  bottom: -38px;
+  background: rgba(238,234,255,.55);
+  pointer-events: none;
+}
+
+.calm-task-label {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 8px;
+  color: var(--nuvora-purple-dark);
+  font-size: .72em;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.calm-task-card h2 {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 1.26em;
+  line-height: 1.28;
+  text-align: left;
+}
+
+.calm-task-card .calm-step {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 0;
+  max-width: 300px;
+  text-align: left;
+  line-height: 1.55;
+  font-size: .98em;
+}
+
+.calm-actions {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.calm-actions .primary,
+.calm-stop {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+}
+
+.calm-stop {
+  border: 1px solid rgba(58,58,66,.10);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--nuvora-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calm-stop:hover {
+  background: #f8f5f0;
+}
+
+.calm-settings-card {
+  overflow: hidden;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #eef7f5 0%, #f7f4ff 100%);
+  border: 1px solid rgba(78,158,147,.10);
+}
+
+.calm-settings-toggle {
+  width: 100%;
+  min-height: 68px;
+  border: 0;
+  background: transparent;
+  padding: 12px 14px;
+  color: inherit;
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calm-settings-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255,255,255,.7);
+  color: var(--nuvora-teal-text);
+}
+
+.calm-settings-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.calm-settings-copy b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.calm-settings-copy small {
+  display: block;
+  font-weight: 500;
+  color: var(--nuvora-text-secondary);
+}
+
+.calm-settings-action {
+  font-weight: 800;
+  white-space: nowrap;
+  color: var(--nuvora-purple-dark);
+}
+
+.calm-settings-panel {
+  border-top: 1px solid rgba(58,58,66,.07);
+  padding: 12px 14px 14px;
+  background: rgba(255,255,255,.56);
+}
+
+.calm-settings-panel .hint {
+  margin-top: 0;
+}
+
+.calm-footer-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 4px 10px 0;
+  color: var(--nuvora-text-secondary);
+  font-size: .76em;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.calm-footer-cloud {
+  width: 38px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  opacity: .92;
+}
+
+.calm-leave {
+  margin: 0 auto;
+  min-height: 42px;
+  font-size: .84em;
+}
+
+/* Reduce the large empty middle area while keeping the bottom nav clear. */
+.calm .content {
+  align-content: start;
+}
+
+.calm .calm-focus {
+  min-height: auto;
+  justify-content: flex-start;
+}
+
+@media (max-width: 380px) {
+  .calm-hero {
+    grid-template-columns: 1fr 74px;
+    padding: 15px;
+  }
+
+  .calm-hero-cloud {
+    width: 70px;
+    height: 66px;
+  }
+
+  .calm-hero-cloud .mascot {
+    transform: scale(.86);
+  }
+
+  .calm-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .calm-settings-toggle {
+    grid-template-columns: 36px 1fr auto;
+  }
+}
+

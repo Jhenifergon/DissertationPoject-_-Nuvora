@@ -510,8 +510,10 @@ describe('Adaptive Calm Mode — Phase B temporary settings', () => {
   }
 
   async function openCalmSettings() {
-    const summary = await screen.findByText('Adjust calm settings');
-    fireEvent.click(summary);
+    const button = await screen.findByRole('button', { name: /Adjust calm settings/i });
+    if (button.getAttribute('aria-expanded') !== 'true') {
+      fireEvent.click(button);
+    }
   }
 
   it('starts each Calm session with all temporary demand-reduction controls enabled', async () => {
@@ -570,6 +572,43 @@ describe('Adaptive Calm Mode — Phase B temporary settings', () => {
     fireEvent.click(screen.getByRole('switch', { name: /Reduce motion/i }));
 
     expect(container.querySelector('main')).not.toHaveClass('reduced');
+  });
+
+  it('keeps the default Calm recommendation free from time pressure', async () => {
+    seedCalmState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText('Calm Mode is on.');
+
+    expect(screen.getByText('Calm test task')).toBeInTheDocument();
+    expect(
+      screen.getByText('Make one small update. You can stop whenever you need.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Nuvora is keeping things simple for now.')).toBeInTheDocument();
+  });
+
+  it('keeps temporary Calm preferences behind progressive disclosure', async () => {
+    seedCalmState(true);
+    render(<NuvoraApp />);
+
+    await screen.findByText('Calm Mode is on.');
+
+    expect(screen.getByText('4 temporary preferences')).toBeInTheDocument();
+    expect(screen.getByText('Show +')).toBeInTheDocument();
+
+    expect(
+      screen.queryByText(
+        'Hides deadlines, priority labels and timed wording while Calm Mode is active.'
+      )
+    ).not.toBeInTheDocument();
+
+    await openCalmSettings();
+
+    expect(
+      screen.getByText(
+        'Hides deadlines, priority labels and timed wording while Calm Mode is active.'
+      )
+    ).toBeVisible();
   });
 
   it('resets temporary Calm choices when Calm Mode is started again', async () => {
@@ -990,7 +1029,7 @@ describe('Overwhelmed Mode barrier panels', () => {
   });
 });
 
-describe('Small resets are tied to the student\'s actual current task', () => {
+describe('Learn tools are differentiated and tied to the student\'s real task', () => {
   function seedTask() {
     localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
       tasks: [{ id: 't1', title: 'Draft chapter 2', module: 'Dissertation', due: '', priority: 'normal', done: false, bucket: 'today', currentStep: { id: 's1', text: 'Open the document.', done: false, completedAt: null } }],
@@ -998,69 +1037,65 @@ describe('Small resets are tied to the student\'s actual current task', () => {
     }));
   }
 
-  it('references the real task title instead of a generic example', async () => {
+  it('shows one optional timer tool rather than repeating timers and soft-tone links across every tool', async () => {
     seedTask();
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
-    await screen.findByText('The 2-minute start');
 
-    expect(screen.getByText(/Don't finish "Draft chapter 2"/)).toBeInTheDocument();
-    expect(screen.getByText(/Turn "Draft chapter 2" into/)).toBeInTheDocument();
-    expect(screen.getByText(/The low-energy version of "Draft chapter 2"/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Open .Draft chapter 2. in my plan/ })).toBeInTheDocument();
+    expect(await screen.findByText('Focus Sprint')).toBeInTheDocument();
+    expect(screen.getByText('Distraction Parking Lot')).toBeInTheDocument();
+    expect(screen.getByText('If–Then Plan')).toBeInTheDocument();
+    expect(screen.getByText('Visual Step Map')).toBeInTheDocument();
+    expect(screen.queryByText('Play a soft tone (optional)')).not.toBeInTheDocument();
   });
 
-  it('falls back to the original generic wording when there is no open task', async () => {
-    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({ tasks: [], checkins: [], reflections: [], settings: {}, stats: { stepsCompleted: 0, strategyUses: {} } }));
-    render(<NuvoraApp />);
-    await screen.findByText('How are things feeling, there?');
-    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
-    await screen.findByText('The 2-minute start');
-
-    expect(screen.getByText("Don't finish the task. Open it and identify only the first action.")).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Open .* in my plan/ })).not.toBeInTheDocument();
-  });
-
-  it('"Use this as my next step" genuinely replaces the task\'s current step, not just a suggestion', async () => {
+  it('lets the student choose the Focus Sprint duration', async () => {
     seedTask();
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
-    await screen.findByText('Shrink the assignment');
-    fireEvent.click(screen.getByRole('button', { name: 'Use this as my next step' }));
+
+    await screen.findByText('Focus Sprint');
+    fireEvent.click(screen.getByRole('button', { name: '10 min' }));
+    expect(screen.getByText('10:00')).toBeInTheDocument();
+  });
+
+  it('parks a distraction without adding it to the task list', async () => {
+    seedTask();
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
+
+    fireEvent.click(await screen.findByText('Distraction Parking Lot'));
+    fireEvent.change(screen.getByLabelText('Thought to park for later'), { target: { value: 'Reply to Sam' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Park it' }));
+    expect(screen.getByText('Reply to Sam')).toBeInTheDocument();
+  });
+
+  it('Visual Step Map uses the real task and can save its first step', async () => {
+    seedTask();
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
+
+    fireEvent.click(await screen.findByText('Visual Step Map'));
+    expect(screen.getByText(/Open Draft chapter 2 and find the exact place you last stopped/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Use step 1 as my next step' }));
     await screen.findByText('Saved as your next step for this task.');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
-    await screen.findByText('My plan');
-    expect(screen.getByText('Write one sentence about Draft chapter 2.')).toBeInTheDocument();
   });
 
-  it('"I did this" on the low-energy version completes the step without completing the whole task', async () => {
+  it('keeps the old redundant "Start activity" disclosure removed', async () => {
     seedTask();
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
     fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
-    await screen.findByText('Low-energy version');
-    fireEvent.click(screen.getByRole('button', { name: 'I did this' }));
-    await screen.findByText(/That step is done/);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
-    await screen.findByText('My plan');
-    expect(screen.getByRole('button', { name: 'Mark Draft chapter 2 as done' })).toBeInTheDocument();
-  });
-
-  it('removes the old redundant "Start activity" disclosure entirely', async () => {
-    seedTask();
-    render(<NuvoraApp />);
-    await screen.findByText('How are things feeling, there?');
-    fireEvent.click(screen.getByRole('button', { name: 'Learn' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Show more study tools' }));
-    await screen.findByText('The 2-minute start');
+    await screen.findByText('Focus Sprint');
     expect(screen.queryByText('Start activity')).not.toBeInTheDocument();
   });
 });

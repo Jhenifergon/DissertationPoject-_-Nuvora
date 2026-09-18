@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { BookOpen, Check, ChevronLeft, CircleHelp, Download, Heart, Home, Leaf, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Shield, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
+import { BookOpen, Check, ChevronLeft, CircleHelp, Download, Heart, Home, Leaf, ListChecks, ListTodo, LogOut, Menu, Pencil, Plus, Settings, Shield, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth, deleteAccount, firebaseEnabled, reauthenticate } from '@/lib/firebase';
 import { authErrorMessage } from '@/lib/authErrors';
@@ -249,20 +249,19 @@ export default function NuvoraApp() {
     let cancelled = false;
     setLoadStatus('loading');
     loadData(user.uid)
-        .then(d => {
-    if (cancelled) return;
+      .then(d => {
+        if (cancelled) return;
+        setData(d);
 
-    setData(d);
+        // The stored Calm state is the starting state for this app session.
+        // Keep the transition ref in sync before updating settings so the
+        // "Calm was just enabled" effect only reacts to an actual user toggle,
+        // not to the initial settings load.
+        previousCalmModeRef.current = d.settings.calmMode;
 
-    // The stored Calm state is the starting state for this app session.
-    // Keep the transition ref in sync before updating settings so the
-    // "Calm was just enabled" effect only reacts to an actual user toggle,
-    // not to the initial settings load.
-    previousCalmModeRef.current = d.settings.calmMode;
-
-    setSettings(d.settings);
-    setLoadStatus('success');
-  })
+        setSettings(d.settings);
+        setLoadStatus('success');
+      })
       .catch(() => {
         if (!cancelled) setLoadStatus('error');
       });
@@ -369,6 +368,22 @@ function Mascot({ size = 64, mood = 'calm' }) {
 }
 
 function Logo() { return <div className="logo"><Mascot size={26} /> Nuvora</div>; }
+
+function PageTitle({ title, tone = 'lavender', icon = null, action = null }) {
+  return <div className="page-title page-title-card" data-tone={tone}>
+    <div className="page-title-copy">
+      <small>NUVORA SPACE</small>
+      <h1>{title}</h1>
+    </div>
+    <div className="page-title-side">
+      <div className="page-title-cloud" aria-hidden="true">
+        <Mascot size={54} mood="calm" />
+        {icon && <span className="page-title-icon">{icon}</span>}
+      </div>
+      {action}
+    </div>
+  </div>;
+}
 function Splash() { return <main><section className="phone splash"><Mascot size={110} /><Logo /><p>A calmer way to move forward.</p></section></main>; }
 
 // Shown when loading the student's data fails outright (not merely slow).
@@ -467,41 +482,76 @@ function Auth() {
   }
 
   if (mode === 'reset') {
-    return <main><section className="phone auth">
-      <Logo />
-      <h1>Reset your password</h1>
-      <p>Enter the email you signed up with, and we’ll send instructions if an account exists for it.</p>
-      <form onSubmit={submitReset}>
-        <label>Email<input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required /></label>
-        <StatusMessage text={resetStatus.text} tone={resetStatus.tone} />
-        <button className="primary" disabled={busy}>{busy ? 'Sending…' : 'Send reset email'}</button>
-      </form>
-      <button className="link" onClick={() => setMode('login')}>Back to log in</button>
+    return <main className="auth-shell"><section className="phone auth auth-phone">
+      <div className="auth-brand-row">
+        <Logo />
+      </div>
+
+      <div className="auth-hero auth-hero-reset">
+        <div className="auth-cloud-wrap" aria-hidden="true">
+          <Mascot size={76} mood="calm" />
+        </div>
+        <div>
+          <small>ACCOUNT SUPPORT</small>
+          <h1>Reset your password</h1>
+          <p>Enter the email you signed up with, and we’ll send instructions if an account exists for it.</p>
+        </div>
+      </div>
+
+      <div className="auth-card">
+        <form onSubmit={submitReset}>
+          <label>Email<input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required /></label>
+          <StatusMessage text={resetStatus.text} tone={resetStatus.tone} />
+          <button className="primary" disabled={busy}>{busy ? 'Sending…' : 'Send reset email'}</button>
+        </form>
+        <button className="link auth-back-link" onClick={() => setMode('login')}>Back to log in</button>
+      </div>
     </section></main>;
   }
 
-  return <main><section className="phone auth">
-    <Logo />
-    <h1>Welcome to your calm study space</h1>
-    <p>No shame. No pressure. One step at a time.</p>
-    <div className="tabs">
-      <button onClick={() => setMode('login')} className={mode === 'login' ? 'active' : ''}>Log in</button>
-      <button onClick={() => setMode('signup')} className={mode === 'signup' ? 'active' : ''}>Sign up</button>
+  return <main className="auth-shell"><section className="phone auth auth-phone">
+    <div className="auth-brand-row">
+      <Logo />
     </div>
-    <form onSubmit={submit}>
-      <label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-      <label>Password<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
-      {mode === 'signup' && <label>What should Nuvora call you? (optional)<input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="You can skip this" /></label>}
-      {mode === 'login' && <button type="button" className="link" style={{ padding: 0, marginTop: -8 }} onClick={() => { setResetEmail(email); setMode('reset'); }}>Forgot password?</button>}
-      <StatusMessage text={error} tone="error" />
-      <button className="primary" disabled={busy}>{busy ? 'Please wait…' : (mode === 'login' ? 'Log in' : 'Create account')}</button>
-    </form>
+
+    <div className="auth-hero">
+      <div className="auth-cloud-wrap" aria-hidden="true">
+        <Mascot size={82} mood="calm" />
+      </div>
+      <div>
+        <small>{mode === 'login' ? 'WELCOME BACK' : 'WELCOME TO NUVORA'}</small>
+        <h1>Welcome to your calm study space</h1>
+        <p>No shame. No pressure. One step at a time.</p>
+      </div>
+    </div>
+
+    <div className="auth-card">
+      <div className="tabs auth-tabs" aria-label="Account options">
+        <button type="button" onClick={() => setMode('login')} className={mode === 'login' ? 'active' : ''}>Log in</button>
+        <button type="button" onClick={() => setMode('signup')} className={mode === 'signup' ? 'active' : ''}>Sign up</button>
+      </div>
+
+      <form onSubmit={submit}>
+        <label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
+        <label>Password<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
+        {mode === 'signup' && <label>What should Nuvora call you? (optional)<input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="You can skip this" /></label>}
+        {mode === 'login' && <button type="button" className="link auth-forgot-link" onClick={() => { setResetEmail(email); setMode('reset'); }}>Forgot password?</button>}
+        <StatusMessage text={error} tone="error" />
+        <button className="primary auth-submit" disabled={busy}>{busy ? 'Please wait…' : (mode === 'login' ? 'Log in' : 'Create account')}</button>
+      </form>
+
+      <div className="auth-note">
+        <Leaf aria-hidden="true" />
+        <span>Your study space stays focused on support, not judgement.</span>
+      </div>
+    </div>
   </section></main>;
 }
 
 // --- Today -------------------------------------------------------------
 
 function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy, calmSession, setCalmSession, pausedThisSession, setPausedThisSession, restartAcknowledged, setRestartAcknowledged, showCalmExit, setShowCalmExit }) {
+  const [calmSettingsOpen, setCalmSettingsOpen] = useState(false);
   const risk = data.checkins[0]?.risk;
   const recommendation = recommendAction(data.tasks, risk?.band);
   const restartMemory = settings.restartMemory;
@@ -509,6 +559,19 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
     ? data.tasks.find(t => t.id === restartMemory.taskId && !t.done && !t.currentStep?.done)
     : null;
   const hasValidRestart = Boolean(restartMemory && restartTask);
+
+  // Calm Mode deliberately separates the task name from the instruction.
+  // When time pressure is hidden, avoid timed language in the recommendation
+  // itself so the interface does not contradict the student's preference.
+  const calmTaskTitle = hasValidRestart
+    ? restartMemory.taskTitle || restartTask?.title || recommendation?.task?.title
+    : recommendation?.task?.title;
+
+  const calmInstruction = hasValidRestart
+    ? restartMemory.stepText
+    : calmSession.hideDeadlines
+      ? 'Make one small update. You can stop whenever you need.'
+      : recommendation?.actionText;
 
   async function stopForNow() {
     if (!recommendation || settingsBusy) return;
@@ -645,44 +708,98 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
   if (settings.calmMode && recommendation) {
     return <div className="calm-focus">
       {!calmSession.reduceVisualDetail && <Mascot size={70} mood="calm" />}
-      <div className="calm-heading">Calm Mode is on — Nuvora is reducing choices for this session.</div>
-      <small>YOUR NEXT SMALL STEP</small>
-      <div className="calm-step">{hasValidRestart ? restartMemory.stepText : recommendation.actionText}</div>
+      <div className="calm-layout">
+        <section className="calm-hero">
+          <div className="calm-hero-copy">
+            <small>CALM SPACE</small>
+            <div className="calm-heading">Calm Mode is on.</div>
+            <p>Nuvora is keeping things simple for now.</p>
+          </div>
+          <div className="calm-hero-cloud" aria-hidden="true">
+            <Mascot size={76} mood="calm" />
+          </div>
+        </section>
 
-      <button className="primary" style={{ width: 'auto', padding: '14px 32px' }} onClick={() => go('tasks')}>Open my plan</button>
-      <button className="option" style={{ width: 'auto', padding: '12px 22px' }} disabled={settingsBusy} onClick={stopForNow}>Stop for now</button>
+        <article className="calm-task-card">
+          <div className="calm-task-label">YOUR NEXT SMALL STEP</div>
+          <h2>{calmTaskTitle}</h2>
+          <p className="calm-step">{calmInstruction}</p>
 
-      <details className="panel" style={{ width: '100%', maxWidth: 340, textAlign: 'left' }}>
-        <summary>Adjust calm settings</summary>
-        <p className="hint">These changes are temporary and reset the next time Calm Mode starts.</p>
+          <div className="calm-actions">
+            <button className="primary" onClick={() => go('tasks')}>
+              Open my plan
+            </button>
+            <button className="calm-stop" disabled={settingsBusy} onClick={stopForNow}>
+              Stop for now
+            </button>
+          </div>
+        </article>
 
-        <Setting
-          label="Hide time pressure"
-          text="Temporarily hides deadlines and priority labels."
-          checked={calmSession.hideDeadlines}
-          onChange={v => setCalmSession(current => ({ ...current, hideDeadlines: v }))}
-        />
-        <Setting
-          label="Hide progress numbers"
-          text="Hides scores and totals if progress details are opened."
-          checked={calmSession.hideProgressNumbers}
-          onChange={v => setCalmSession(current => ({ ...current, hideProgressNumbers: v }))}
-        />
-        <Setting
-          label="Reduce visual detail"
-          text="Hides non-essential illustrations, step previews and task edit controls."
-          checked={calmSession.reduceVisualDetail}
-          onChange={v => setCalmSession(current => ({ ...current, reduceVisualDetail: v }))}
-        />
-        <Setting
-          label="Reduce motion"
-          text="Temporarily removes non-essential animation and transitions."
-          checked={calmSession.reduceMotion}
-          onChange={v => setCalmSession(current => ({ ...current, reduceMotion: v }))}
-        />
-      </details>
+        <div className="calm-settings-card">
+          <button
+            type="button"
+            className="calm-settings-toggle"
+            aria-expanded={calmSettingsOpen}
+            aria-controls="calm-settings-panel"
+            onClick={() => setCalmSettingsOpen(open => !open)}
+          >
+            <span className="calm-settings-icon" aria-hidden="true"><Settings /></span>
+            <span className="calm-settings-copy">
+              <b>Adjust calm settings</b>
+              <small>4 temporary preferences</small>
+            </span>
+            <span className="calm-settings-action" aria-hidden="true">
+              {calmSettingsOpen ? 'Hide −' : 'Show +'}
+            </span>
+          </button>
 
-      <button className="link" disabled={settingsBusy} onClick={() => setShowCalmExit(true)}>Leave Calm Mode</button>
+          {calmSettingsOpen && (
+            <div id="calm-settings-panel" className="calm-settings-panel">
+              <p className="hint">
+                These changes are temporary and reset the next time Calm Mode starts.
+              </p>
+
+              <Setting
+                label="Hide time pressure"
+                text="Hides deadlines, priority labels and timed wording while Calm Mode is active."
+                checked={calmSession.hideDeadlines}
+                onChange={v => setCalmSession(current => ({ ...current, hideDeadlines: v }))}
+              />
+              <Setting
+                label="Hide progress numbers"
+                text="Keeps scores and totals out of view while Calm Mode is active."
+                checked={calmSession.hideProgressNumbers}
+                onChange={v => setCalmSession(current => ({ ...current, hideProgressNumbers: v }))}
+              />
+              <Setting
+                label="Reduce visual detail"
+                text="Hides non-essential illustrations, step previews and task edit controls."
+                checked={calmSession.reduceVisualDetail}
+                onChange={v => setCalmSession(current => ({ ...current, reduceVisualDetail: v }))}
+              />
+              <Setting
+                label="Reduce motion"
+                text="Temporarily removes non-essential animation and transitions."
+                checked={calmSession.reduceMotion}
+                onChange={v => setCalmSession(current => ({ ...current, reduceMotion: v }))}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="calm-footer-note">
+          <div className="calm-footer-cloud" aria-hidden="true"><Mascot size={34} mood="calm" /></div>
+          <span>You can leave this here and come back when you’re ready.</span>
+        </div>
+
+        <button
+          className="link calm-leave"
+          disabled={settingsBusy}
+          onClick={() => setShowCalmExit(true)}
+        >
+          Leave Calm Mode
+        </button>
+      </div>
     </div>;
   }
 
@@ -706,8 +823,19 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
         <button className="link" disabled={settingsBusy} onClick={clearRestartMemory}>Dismiss</button>
       </div>
     </article>}
-    <div className="welcome"><div><small>{timeOfDayGreeting().toUpperCase()}</small><h1>How are things feeling, {displayNameOrFallback(settings.displayName)}?</h1></div><div className="avatar" aria-hidden="true">{avatarInitial(settings.displayName)}</div></div>
-    {!risk ? <button className="checkin-card" onClick={() => go('checkin')}><div><b>Check in when it would help</b><span>A few gentle questions · skip anytime</span></div><Sparkles /></button> : <RiskCard risk={risk} tasks={data.tasks} />}
+    <div className="welcome welcome-card">
+      <div>
+        <small>{timeOfDayGreeting().toUpperCase()}</small>
+        <h1>How are things feeling, {displayNameOrFallback(settings.displayName)}?</h1>
+      </div>
+      <div className="welcome-cloud" aria-hidden="true"><Mascot size={58} mood="calm" /></div>
+    </div>
+    {!risk
+      ? <button className="checkin-card" onClick={() => go('checkin')}>
+          <div><b>Check in when it would help</b><span>A few gentle questions · skip anytime</span></div>
+          <Sparkles />
+        </button>
+      : <RiskCard risk={risk} tasks={data.tasks} onUpdate={() => go('checkin')} />}
     <button className="overwhelmed" onClick={() => go('overwhelmed')}><Heart /> I’m feeling overwhelmed</button>
     <div className="section-title"><h2>One small next step</h2><button onClick={() => go('tasks')}>View plan</button></div>
     {recommendation ? <FocusTask key={recommendation.task.id} task={recommendation.task} actionText={recommendation.actionText} uid={uid} setData={setData} /> : (
@@ -720,13 +848,22 @@ function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy,
   </>;
 }
 
-function RiskCard({ risk, tasks }) {
+function RiskCard({ risk, tasks, onUpdate }) {
   const explanation = explainPressure(risk, tasks);
   return <article className={`risk ${risk.band.toLowerCase()}`}>
     <div className="score" aria-hidden="true">{risk.score}</div>
-    <div>
+    <div className="risk-copy">
       <h3>Workload pressure · {risk.band}</h3>
       <p>{risk.message}</p>
+
+      <button className="risk-update" onClick={onUpdate}>
+        <Sparkles aria-hidden="true" />
+        <span>
+          <b>Update workload pressure</b>
+          <small>Take a new check-in</small>
+        </span>
+      </button>
+
       <details>
         <summary>Why this result?</summary>
         <p className="hint">Pressure estimate: {risk.score}/100 — a supportive estimate, not a diagnosis.</p>
@@ -934,7 +1071,12 @@ function Tasks({ data, uid, setData, calmMode, calmSession = CALM_SESSION_DEFAUL
   const editingTask = editingId ? data.tasks.find(t => t.id === editingId) : null;
 
   return <>
-    <div className="page-title"><h1>My plan</h1><button className="icon filled" ref={addTaskTriggerRef} onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button></div>
+    <PageTitle
+      title="My plan"
+      tone="blue"
+      icon={<ListChecks />}
+      action={<button className="icon filled page-title-action" ref={addTaskTriggerRef} onClick={() => setAdding(true)} aria-label="Add task"><Plus /></button>}
+    />
     {calmMode && !showAllTabs
       ? <button className="link" onClick={() => setShowAllTabs(true)}>Show week &amp; later</button>
       : <div className="tabs">{['today', 'week', 'later'].map(t => <button className={tab === t ? 'active' : ''} onClick={() => setTab(t)} key={t}>{t}</button>)}</div>}
@@ -1111,7 +1253,7 @@ function Checkin({ uid, data, setData, go, draft, setDraft }) {
 // generated sine wave (Web Audio API) at low volume, started only by an
 // explicit tap — never bundled audio, never autoplay, matching the "no
 // background music, nothing plays itself" rule.
-function FocusTimer({ seconds = 120 }) {
+function FocusTimer({ seconds = 120, showTone = true }) {
   const [remaining, setRemaining] = useState(seconds);
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -1164,7 +1306,7 @@ function FocusTimer({ seconds = 120 }) {
       {running && <button onClick={() => setRunning(false)}>Pause</button>}
       <button onClick={() => { setRunning(false); setFinished(false); setRemaining(seconds); }} disabled={remaining === seconds && !running}>Reset</button>
     </div>
-    <button className="link" onClick={toggleTone}>{toneOn ? 'Turn off soft tone' : 'Play a soft tone (optional)'}</button>
+    {showTone && <button className="link" onClick={toggleTone}>{toneOn ? 'Turn off soft tone' : 'Play a soft tone (optional)'}</button>}
   </div>;
 }
 
@@ -1175,7 +1317,13 @@ function Learn({ calmMode, data, uid, setData, go }) {
   const [lowEnergyStatus, setLowEnergyStatus] = useState({ text: '', tone: 'status' });
   const [supportChoice, setSupportChoice] = useState(null);
   const [supportStatus, setSupportStatus] = useState({ text: '', tone: 'status' });
-  const [helperAnswers, setHelperAnswers] = useState({ focus: '', clarity: '', energy: '' });
+  const [helperAnswers, setHelperAnswers] = useState({ brain: '', environment: '', task: '' });
+  const [sensoryChoice, setSensoryChoice] = useState('');
+  const [focusSprintMinutes, setFocusSprintMinutes] = useState(5);
+  const [parkingInput, setParkingInput] = useState('');
+  const [parkingLot, setParkingLot] = useState([]);
+  const [ifThenCue, setIfThenCue] = useState('');
+  const [ifThenAction, setIfThenAction] = useState('');
   const task = pickPriorityTask(data.tasks);
 
   async function persistSuggestedStep(text, statusSetter = setSupportStatus) {
@@ -1237,11 +1385,11 @@ function Learn({ calmMode, data, uid, setData, go }) {
   }
 
   function helperRecommendation() {
-    const { focus, clarity, energy } = helperAnswers;
-    if (!focus || !clarity || !energy) return null;
-    if (focus === 'no') return 'sensory';
-    if (energy === 'none' || energy === 'low') return 'energy';
-    if (clarity === 'no') return 'big';
+    const { brain, environment, task: taskFeeling } = helperAnswers;
+    if (!brain || !environment || !taskFeeling) return null;
+    if (environment === 'overwhelming') return 'sensory';
+    if (brain === 'tired') return 'energy';
+    if (taskFeeling === 'big' || taskFeeling === 'unclear') return 'big';
     return 'start';
   }
 
@@ -1260,117 +1408,231 @@ function Learn({ calmMode, data, uid, setData, go }) {
     if (!supportChoice) return null;
 
     if (supportChoice === 'start') return <article className="panel">
-      <small>GETTING STARTED</small>
-      <h2>Only begin. Finishing is not required.</h2>
-      <p>{task ? <>Open <b>&ldquo;{task.title}&rdquo;</b>. Nothing else yet.</> : 'Open the file, page or notes you need. Nothing else yet.'}</p>
-      <FocusTimer seconds={120} />
-      {task && <button className="option" onClick={() => go('tasks')}>Open &ldquo;{task.title}&rdquo; in my plan</button>}
-      <p className="hint">Opening it counts. You can stop after two minutes.</p>
+      <small>LAUNCH STEP</small>
+      <h2>Make the start obvious, not ambitious.</h2>
+      <p>
+        {task
+          ? <>When I open <b>&ldquo;{task.title}&rdquo;</b>, I will only find the section I need next.</>
+          : <>When I open my work, I will only find the next place to begin.</>}
+      </p>
+      <div className="panel" style={{ margin: '12px 0', background: 'var(--surface-soft)' }}>
+        <small>IF–THEN CUE</small>
+        <p style={{ marginBottom: 0 }}>
+          <b>When</b> I open the work, <b>I will</b> find one place to continue.
+        </p>
+      </div>
+      {task && <button className="primary" onClick={() => go('tasks')}>Open &ldquo;{task.title}&rdquo;</button>}
+      <p className="hint">Opening the right place is enough. No timer is required.</p>
     </article>;
 
     if (supportChoice === 'big') return <article className="panel">
-      <small>MAKE IT SMALLER</small>
-      <h2>Choose the version that feels possible.</h2>
+      <small>VISUAL STEP MAP</small>
+      <h2>See only the next three actions.</h2>
       {task ? <>
-        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Open ${task.title} and find the section you need next.`)}><b>Tiny</b><br />Open it and find the next section.</button>
-        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Add one bullet point to ${task.title}.`)}><b>Small</b><br />Add one useful bullet point.</button>
-        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Work on ${task.title} for five focused minutes.`)}><b>5-minute version</b><br />Work for five minutes, then reassess.</button>
-      </> : <p>Pick one section, one question or one sentence. The whole task can wait.</p>}
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Open ${task.title} and find the section you need next.`)}>
+          <b>1 · Find the place</b><br />Open the task and locate the next section.
+        </button>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Add one useful point to ${task.title}.`)}>
+          <b>2 · Add one point</b><br />Write one useful bullet, sentence or note.
+        </button>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Check what comes immediately after your current step in ${task.title}.`)}>
+          <b>3 · Choose what follows</b><br />Decide the next action only after that.
+        </button>
+      </> : <p>Find the place → add one point → choose what comes next. The whole task can stay out of view.</p>}
       <StatusMessage text={supportStatus.text} tone={supportStatus.tone} />
     </article>;
 
     if (supportChoice === 'energy') return <article className="panel">
       <small>LOW-ENERGY MODE</small>
-      <h2>Lower the requirement, not your self-worth.</h2>
-      <p>{task ? <>Current step: <b>{task.currentStep?.text || task.title}</b></> : 'Choose the smallest useful preparation for later.'}</p>
-      {task && <>
-        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Open ${task.title} and leave it ready for later.`)}>Just prepare it for later</button>
-        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Spend two minutes on ${task.title}, then stop if needed.`)}>Give it only two minutes</button>
-      </>}
-      <FocusTimer seconds={120} />
-      <StatusMessage text={supportStatus.text} tone={supportStatus.tone} />
-      <p className="hint">Resting or preparing the workspace can be the useful step today.</p>
+      <h2>Choose the effort level you actually have.</h2>
+      {task ? <>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(`Open ${task.title} and leave it ready for later.`)}>
+          <b>Tiny</b><br />Prepare the task and stop there.
+        </button>
+        <button className="option" disabled={busy} onClick={() => persistSuggestedStep(task.currentStep?.text || `Do one small part of ${task.title}.`)}>
+          <b>Enough</b><br />Do only the current step.
+        </button>
+        <button className="option" onClick={() => go('tasks')}>
+          <b>Full</b><br />Open the plan and choose what you can manage.
+        </button>
+        {!task.currentStep?.done && <button className="option" disabled={busy} onClick={markLowEnergyDone}>I did the current step</button>}
+      </> : <p>Tiny: prepare it. Enough: do one step. Full: continue only if you still have capacity.</p>}
+      <StatusMessage text={supportStatus.text || lowEnergyStatus.text} tone={supportStatus.text ? supportStatus.tone : lowEnergyStatus.tone} />
+      <p className="hint">The useful version can be smaller than the ideal version.</p>
     </article>;
 
-    if (supportChoice === 'sensory') return <article className="panel">
-      <small>REDUCE INPUT FIRST</small>
-      <h2>No task work is required during this reset.</h2>
-      <p>Try changing just one thing: reduce sound, lower screen brightness, move somewhere quieter, or put your phone face down.</p>
-      <FocusTimer seconds={120} />
-      <p className="hint">After the timer, you can choose whether to work, rest longer, or return to Today.</p>
-      <button onClick={() => go('today')}>Back to Today</button>
-    </article>;
+    if (supportChoice === 'sensory') {
+      const sensoryOptions = [
+        ['quiet', 'Move somewhere quieter'],
+        ['screen', 'Lower screen brightness'],
+        ['notifications', 'Pause notifications'],
+        ['headphones', 'Use headphones or ear protection'],
+        ['phone', 'Put the phone out of sight'],
+      ];
+      return <article className="panel">
+        <small>SENSORY SETUP</small>
+        <h2>Change one source of input first.</h2>
+        <p>No task work is required while you make the environment easier to tolerate.</p>
+        <div className="scale-vertical" aria-label="Choose one sensory adjustment">
+          {sensoryOptions.map(([id, label]) => (
+            <button
+              key={id}
+              className={`option ${sensoryChoice === id ? 'selected' : ''}`}
+              aria-pressed={sensoryChoice === id}
+              onClick={() => setSensoryChoice(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {sensoryChoice && <p className="status-msg status" role="status">Good. Change only that one thing, then decide whether you want to work, rest, or return to Today.</p>}
+        <button onClick={() => go('today')}>Back to Today</button>
+      </article>;
+    }
 
     if (supportChoice === 'company') return <article className="panel">
-      <small>BODY DOUBLING</small>
-      <h2>Work quietly alongside someone.</h2>
-      <p>You do not need them to teach, supervise or motivate you. Their presence can simply make starting feel less solitary.</p>
-      <FocusTimer seconds={1500} />
+      <small>WORK ALONGSIDE SOMEONE</small>
+      <h2>Use another person as quiet company, not as a supervisor.</h2>
+      <p>Choose the kind of presence that feels useful. You do not have to explain the task.</p>
       <button className="option" onClick={copyBodyDoubleMessage}>Copy a message asking someone to join me</button>
-      <a className="option" href="https://www.youtube.com/watch?v=wYxDJOFgDw0" target="_blank" rel="noopener noreferrer">Optional 25-minute Study With Me video ↗</a>
+      <a className="option" href="https://www.youtube.com/watch?v=wYxDJOFgDw0" target="_blank" rel="noopener noreferrer">Optional Study With Me video ↗</a>
       <StatusMessage text={supportStatus.text} tone={supportStatus.tone} />
       <p className="hint">External YouTube link. It is optional and never starts automatically.</p>
     </article>;
 
     return <article className="panel">
-      <small>QUICK HELPER</small>
-      <h2>Three questions. No perfect answer needed.</h2>
-      <label>Can you focus right now?
-        <select value={helperAnswers.focus} onChange={e => setHelperAnswers(a => ({ ...a, focus: e.target.value }))}>
-          <option value="">Choose one</option><option value="yes">Yes</option><option value="some">A little</option><option value="no">No</option>
+      <small>QUICK SUPPORT MATCHER</small>
+      <h2>Three quick checks. No perfect answer needed.</h2>
+      <label>My brain feels
+        <select value={helperAnswers.brain} onChange={e => setHelperAnswers(a => ({ ...a, brain: e.target.value }))}>
+          <option value="">Choose one</option>
+          <option value="scattered">Scattered</option>
+          <option value="stuck">Stuck</option>
+          <option value="tired">Tired</option>
         </select>
       </label>
-      <label>Does the task feel clear?
-        <select value={helperAnswers.clarity} onChange={e => setHelperAnswers(a => ({ ...a, clarity: e.target.value }))}>
-          <option value="">Choose one</option><option value="yes">Yes</option><option value="some">Not really</option><option value="no">No idea where to start</option>
+      <label>My environment feels
+        <select value={helperAnswers.environment} onChange={e => setHelperAnswers(a => ({ ...a, environment: e.target.value }))}>
+          <option value="">Choose one</option>
+          <option value="okay">Okay</option>
+          <option value="distracting">Distracting</option>
+          <option value="overwhelming">Overwhelming</option>
         </select>
       </label>
-      <label>How much energy do you have?
-        <select value={helperAnswers.energy} onChange={e => setHelperAnswers(a => ({ ...a, energy: e.target.value }))}>
-          <option value="">Choose one</option><option value="some">Some</option><option value="low">Very little</option><option value="none">None</option>
+      <label>The task feels
+        <select value={helperAnswers.task} onChange={e => setHelperAnswers(a => ({ ...a, task: e.target.value }))}>
+          <option value="">Choose one</option>
+          <option value="clear">Clear</option>
+          <option value="big">Too big</option>
+          <option value="unclear">Unclear</option>
         </select>
       </label>
       {!helperResult && <p className="hint">Answer all three and Nuvora will suggest one support route.</p>}
       {helperResult && <button className="primary" onClick={() => setSupportChoice(helperResult)}>
-        {helperResult === 'sensory' ? 'Try a reset first' : helperResult === 'energy' ? 'Try the low-energy version' : helperResult === 'big' ? 'Make the task smaller' : 'Try a tiny start'}
+        {helperResult === 'sensory'
+          ? 'Adjust the environment'
+          : helperResult === 'energy'
+            ? 'Try the low-energy version'
+            : helperResult === 'big'
+              ? 'Map three small steps'
+              : 'Try a launch step'}
       </button>}
     </article>;
   }
 
-  // Existing microlearning activities remain available so the redesign adds
-  // support without removing the flows already covered by regression tests.
+  // Extra tools deliberately use different support mechanisms instead of
+  // repeating the same two-minute timer/audio pattern on every card.
+  const visualSteps = task
+    ? [
+        `Open ${task.title} and find the exact place you last stopped.`,
+        task.currentStep?.text || `Add one useful point to ${task.title}.`,
+        `Decide only the next action after that.`,
+      ]
+    : [
+        'Open the work and find where you stopped.',
+        'Do one visible action.',
+        'Choose only what comes immediately after it.',
+      ];
+
   const allActivities = [
     {
-      title: 'The 2-minute start', badge: '2–3 MIN · RECOMMENDED',
+      title: 'Focus Sprint',
+      badge: 'OPTIONAL FOCUS TOOL',
       body: <>
-        <p>{task ? `Don't finish "${task.title}". Open it and identify only the first action.` : "Don't finish the task. Open it and identify only the first action."}</p>
-        <FocusTimer seconds={120} />
+        <p>Choose the amount of time yourself. The timer is optional support, not the goal.</p>
+        <div className="row" role="group" aria-label="Choose focus sprint length">
+          {[2, 5, 10, 15].map(minutes => (
+            <button
+              key={minutes}
+              className={focusSprintMinutes === minutes ? 'selected' : ''}
+              aria-pressed={focusSprintMinutes === minutes}
+              onClick={() => setFocusSprintMinutes(minutes)}
+            >
+              {minutes} min
+            </button>
+          ))}
+        </div>
+        <FocusTimer key={focusSprintMinutes} seconds={focusSprintMinutes * 60} showTone={false} />
       </>,
     },
     {
-      title: 'Shrink the assignment', badge: '2–5 MIN',
+      title: 'Distraction Parking Lot',
+      badge: 'CLEAR WORKING MEMORY',
       body: <>
-        <p>{task ? `Turn "${task.title}" into: "Write one sentence about ${task.title}."` : 'Turn "Write introduction" into "Write one sentence explaining the topic."'}</p>
-        <FocusTimer seconds={120} />
-        {task && <div className="row"><button className="option" disabled={busy} onClick={useShrunkStep}>Use this as my next step</button></div>}
+        <p>Put an unrelated thought somewhere safe so you do not have to keep holding it in mind.</p>
+        <div className="row">
+          <input
+            aria-label="Thought to park for later"
+            value={parkingInput}
+            onChange={e => setParkingInput(e.target.value)}
+            placeholder="e.g. reply to Sam, buy milk, check that link"
+          />
+          <button
+            disabled={!parkingInput.trim()}
+            onClick={() => {
+              const note = parkingInput.trim();
+              if (!note) return;
+              setParkingLot(items => [...items, note]);
+              setParkingInput('');
+            }}
+          >
+            Park it
+          </button>
+        </div>
+        {parkingLot.length > 0 && <ul aria-label="Parked thoughts">
+          {parkingLot.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+        </ul>}
+        <p className="hint">These notes are session-only and are not added to your task list.</p>
+      </>,
+    },
+    {
+      title: 'If–Then Plan',
+      badge: 'MAKE THE CUE EXPLICIT',
+      body: <>
+        <p>Turn an intention into a concrete cue and response.</p>
+        <label>When…
+          <input value={ifThenCue} onChange={e => setIfThenCue(e.target.value)} placeholder="I open my dissertation document" />
+        </label>
+        <label>I will…
+          <input value={ifThenAction} onChange={e => setIfThenAction(e.target.value)} placeholder="find the testing section and add one point" />
+        </label>
+        {(ifThenCue || ifThenAction) && <div className="panel" style={{ marginTop: 10 }}>
+          <b>My plan</b>
+          <p style={{ marginBottom: 0 }}>
+            When {ifThenCue || 'the cue happens'}, I will {ifThenAction || 'do one specific action'}.
+          </p>
+        </div>}
+      </>,
+    },
+    {
+      title: 'Visual Step Map',
+      badge: 'SEE ONLY THREE ACTIONS',
+      body: <>
+        <ol>
+          {visualSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}
+        </ol>
+        {task && <button className="option" disabled={busy} onClick={() => persistSuggestedStep(visualSteps[0], setShrinkStatus)}>Use step 1 as my next step</button>}
         <StatusMessage text={shrinkStatus.text} tone={shrinkStatus.tone} />
-      </>,
-    },
-    {
-      title: 'Low-energy version', badge: '2–5 MIN',
-      body: <>
-        <p>{task ? `The low-energy version of "${task.title}" is just: "${task.currentStep?.text}"` : "Choose the smallest useful version of today's task."}</p>
-        <FocusTimer seconds={120} />
-        {task && !task.currentStep?.done && <div className="row"><button className="option" disabled={busy} onClick={markLowEnergyDone}>I did this</button></div>}
-        <StatusMessage text={lowEnergyStatus.text} tone={lowEnergyStatus.tone} />
-      </>,
-    },
-    {
-      title: 'Restart after getting stuck', badge: '2–5 MIN',
-      body: <>
-        <p>1. Reopen the work. 2. Find your last completed point. 3. Choose one next action.</p>
-        <FocusTimer seconds={120} />
-        {task && <div className="row"><button className="option" onClick={() => go('tasks')}>Open &ldquo;{task.title}&rdquo; in my plan</button></div>}
       </>,
     },
   ];
@@ -1379,10 +1641,10 @@ function Learn({ calmMode, data, uid, setData, go }) {
   const ACTIVITY_COLORS = ['teal', 'amber', 'blue'];
 
   return <>
-    <div className="page-title"><h1>Learn</h1><Leaf /></div>
+    <PageTitle title="Learn" tone="lavender" icon={<Leaf />} />
     <p><b>Support tools for difficult study moments.</b> You do not need to fix everything. Pick the problem that feels closest.</p>
 
-    <div className="panel">
+    <div className="panel panel-lavender">
       <h2>What would help right now?</h2>
       <div className="scale-vertical" aria-label="What would help right now?">
         {supportChoices.map(choice => <button
@@ -1399,7 +1661,7 @@ function Learn({ calmMode, data, uid, setData, go }) {
 
     {renderSupportPanel()}
 
-    <article className="panel">
+    <article className="panel panel-teal">
       <h2>Reset Space</h2>
       <p>Need a little more space before studying? You can pause here without starting another task.</p>
       <details>
@@ -1412,9 +1674,9 @@ function Learn({ calmMode, data, uid, setData, go }) {
       <p className="hint">External resources are optional and are not a replacement for professional support.</p>
     </article>
 
-    <div className="panel">
+    <div className="panel panel-amber">
       <h2>More study tools</h2>
-      <p className="hint">Optional activities for when you want another way to get started. You do not need to use these.</p>
+      <p className="hint">Optional tools for different kinds of attention, planning and task-entry problems. Use only the one that fits.</p>
       <button
         type="button"
         className="option"
@@ -1429,7 +1691,7 @@ function Learn({ calmMode, data, uid, setData, go }) {
       <>
         <div className="all-activities-label">SUGGESTED TOOL</div>
         <div className="pick-card">
-          <div className="pick-label"><span>GENTLE START</span></div>
+          <div className="pick-label"><span>CHOOSE YOUR OWN LENGTH</span></div>
           <h2 style={{ margin: 0 }}>{pick.title}</h2>
           {pick.body}
         </div>
@@ -1464,7 +1726,7 @@ function Progress({ data, settings, updateSettings, settingsBusy, go, calmSessio
 
   if (settings.hideProgress) {
     return <>
-      <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
+      <PageTitle title="Progress, without pressure" tone="teal" icon={<TrendingUp />} />
       <Empty title="Progress is hidden" text="You've chosen not to see these details right now. That's completely fine." />
       <button disabled={settingsBusy} onClick={() => updateSettings({ ...settings, hideProgress: false })}>Show progress again</button>
     </>;
@@ -1473,11 +1735,11 @@ function Progress({ data, settings, updateSettings, settingsBusy, go, calmSessio
   const patternInsights = buildPatternInsights(data.checkins);
 
   const trendsAndStrategies = <>
-    {patternInsights.length > 0 && <div className="panel">
+    {patternInsights.length > 0 && <div className="panel panel-teal">
       <h2>Patterns</h2>
       {patternInsights.map((line, i) => <p key={i}>{line}</p>)}
     </div>}
-    {usedStrategies.length > 0 && <div className="panel">
+    {usedStrategies.length > 0 && <div className="panel panel-lavender">
       <h2>Helpful strategies</h2>
       {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{showProgressNumbers ? n : 'Used'}</b></div>)}
     </div>}
@@ -1497,7 +1759,7 @@ function Progress({ data, settings, updateSettings, settingsBusy, go, calmSessio
   </>;
 
   return <>
-    <div className="page-title"><h1>Progress, without pressure</h1><TrendingUp /></div>
+    <PageTitle title="Progress, without pressure" tone="teal" icon={<TrendingUp />} />
     <p>These numbers are just for your own reflection — there's no target to hit, and nothing here is shared with anyone.</p>
     {showProgressNumbers
       ? <div className="stats">
@@ -1681,7 +1943,7 @@ function Privacy({ uid, data, setData, updateSettings, go }) {
 
   return <>
     <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
-    <div className="page-title"><h1>Privacy &amp; data</h1><Shield /></div>
+    <PageTitle title="Privacy & data" tone="blue" icon={<Shield />} />
 
     <details className="panel"><summary>Offline storage</summary>
       <p>Signed-in Firebase mode does not enable persistent browser caching by default. This reduces the chance of check-in data remaining on a shared device after the browser session. Demo mode stores its sample data locally in this browser.</p>
@@ -1769,7 +2031,7 @@ function Support({ data, settings, go }) {
   }
 
   return <>
-    <div className="page-title"><h1>Support</h1><Heart /></div>
+    <PageTitle title="Support" tone="amber" icon={<Heart />} />
     <article className="support-card">
       <h2>A summary you control</h2>
       <p>Nuvora can create a short summary based on your check-ins and tasks. Nothing is sent automatically — you choose whether and how to share it.</p>
@@ -1778,7 +2040,7 @@ function Support({ data, settings, go }) {
       <StatusMessage text={status.text} tone={status.tone} />
     </article>
 
-    <div className="panel" style={{ padding: 6 }}>
+    <div className="panel panel-blue" style={{ padding: 6 }}>
       <button onClick={() => go('settings')} style={{ width: '100%', padding: '14px 12px', border: 0, background: 'none', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, color: 'var(--ink)' }}>
         Calm accessibility settings <span className="hint" style={{ color: 'var(--nuvora-purple-dark)' }}>›</span>
       </button>
@@ -1806,7 +2068,7 @@ function Support({ data, settings, go }) {
 function SettingsPage({ value, busy, error, onChange, go }) {
   return <>
     <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
-    <h1>Calm accessibility settings</h1>
+    <PageTitle title="Calm accessibility settings" tone="teal" icon={<Leaf />} />
     <label className="setting" style={{ display: 'block' }}>
       <b>What should Nuvora call you?</b>
       <p>Optional — used only for a friendly greeting. Leave blank if you&rsquo;d rather not.</p>
