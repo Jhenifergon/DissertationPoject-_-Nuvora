@@ -1,0 +1,277 @@
+/* =====================================================================
+   Calm Mode — refined visual hierarchy
+   ===================================================================== */
+
+.calm-focus {
+  padding-top: 16px;
+}
+
+.calm-layout {
+  width: 100%;
+  max-width: 356px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.calm-hero {
+  display: grid;
+  grid-template-columns: 1fr 92px;
+  align-items: center;
+  gap: 12px;
+  padding: 17px 18px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 92% 4%, rgba(255,255,255,.62) 0 42px, transparent 43px),
+    linear-gradient(135deg, #efeaff 0%, #e7f5f1 100%);
+  border: 1px solid rgba(110,98,229,.08);
+  box-shadow: 0 10px 26px rgba(58,58,66,.055);
+  overflow: hidden;
+}
+
+.calm-hero-copy {
+  min-width: 0;
+}
+
+.calm-hero-copy small {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--nuvora-purple-dark);
+  letter-spacing: .08em;
+}
+
+.calm-hero .calm-heading {
+  margin: 0 0 5px;
+  font-size: 1.18em;
+  text-align: left;
+}
+
+.calm-hero p {
+  margin: 0;
+  color: var(--nuvora-text-secondary);
+  font-size: .84em;
+  line-height: 1.45;
+}
+
+.calm-hero-cloud {
+  width: 86px;
+  height: 78px;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  background: rgba(255,255,255,.58);
+  border: 1px solid rgba(255,255,255,.75);
+  box-shadow: 0 7px 18px rgba(91,79,209,.08);
+}
+
+.calm-hero-cloud .mascot {
+  filter: drop-shadow(0 6px 8px rgba(91,79,209,.12));
+}
+
+.calm-task-card {
+  position: relative;
+  overflow: hidden;
+  padding: 20px;
+  border-radius: 24px;
+  background: #fffdf9;
+  border: 1px solid rgba(58,58,66,.075);
+  box-shadow: 0 10px 26px rgba(58,58,66,.055);
+  text-align: left;
+}
+
+.calm-task-card::before {
+  content: "";
+  position: absolute;
+  width: 86px;
+  height: 86px;
+  border-radius: 999px;
+  right: -30px;
+  bottom: -38px;
+  background: rgba(238,234,255,.55);
+  pointer-events: none;
+}
+
+.calm-task-label {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 8px;
+  color: var(--nuvora-purple-dark);
+  font-size: .72em;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.calm-task-card h2 {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 1.26em;
+  line-height: 1.28;
+  text-align: left;
+}
+
+.calm-task-card .calm-step {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 0;
+  max-width: 300px;
+  text-align: left;
+  line-height: 1.55;
+  font-size: .98em;
+}
+
+.calm-actions {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.calm-actions .primary,
+.calm-stop {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+}
+
+.calm-stop {
+  border: 1px solid rgba(58,58,66,.10);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--nuvora-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calm-stop:hover {
+  background: #f8f5f0;
+}
+
+.calm-settings-card {
+  overflow: hidden;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #eef7f5 0%, #f7f4ff 100%);
+  border: 1px solid rgba(78,158,147,.10);
+}
+
+.calm-settings-toggle {
+  width: 100%;
+  min-height: 68px;
+  border: 0;
+  background: transparent;
+  padding: 12px 14px;
+  color: inherit;
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calm-settings-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255,255,255,.7);
+  color: var(--nuvora-teal-text);
+}
+
+.calm-settings-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.calm-settings-copy b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.calm-settings-copy small {
+  display: block;
+  font-weight: 500;
+  color: var(--nuvora-text-secondary);
+}
+
+.calm-settings-action {
+  font-weight: 800;
+  white-space: nowrap;
+  color: var(--nuvora-purple-dark);
+}
+
+.calm-settings-panel {
+  border-top: 1px solid rgba(58,58,66,.07);
+  padding: 12px 14px 14px;
+  background: rgba(255,255,255,.56);
+}
+
+.calm-settings-panel .hint {
+  margin-top: 0;
+}
+
+.calm-footer-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 4px 10px 0;
+  color: var(--nuvora-text-secondary);
+  font-size: .76em;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.calm-footer-cloud {
+  width: 38px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  opacity: .92;
+}
+
+.calm-leave {
+  margin: 0 auto;
+  min-height: 42px;
+  font-size: .84em;
+}
+
+/* Reduce the large empty middle area while keeping the bottom nav clear. */
+.calm .content {
+  align-content: start;
+}
+
+.calm .calm-focus {
+  min-height: auto;
+  justify-content: flex-start;
+}
+
+@media (max-width: 380px) {
+  .calm-hero {
+    grid-template-columns: 1fr 74px;
+    padding: 15px;
+  }
+
+  .calm-hero-cloud {
+    width: 70px;
+    height: 66px;
+  }
+
+  .calm-hero-cloud .mascot {
+    transform: scale(.86);
+  }
+
+  .calm-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .calm-settings-toggle {
+    grid-template-columns: 36px 1fr auto;
+  }
+}
+

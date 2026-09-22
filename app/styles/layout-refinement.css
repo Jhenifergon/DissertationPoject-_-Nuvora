@@ -1,0 +1,434 @@
+/* =====================================================================
+   STEP 8.9b — STRONGER WHOLE-APP VISUAL REFINEMENT
+   More visible than the previous pass.
+   Keeps Nuvora's existing accessible tokens, but changes hierarchy,
+   surfaces, card treatment, navigation and auth layout more clearly.
+   ===================================================================== */
+
+:root {
+  --nuvora-bg: #f3efe9;
+  --nuvora-bg-soft: #f7f4f0;
+  --nuvora-surface: #fffdfb;
+
+  --nuvora-purple: #6c5ce7;
+  --nuvora-purple-dark: #5748cf;
+  --nuvora-lavender: #ece8fb;
+  --nuvora-lavender-soft: #f4f1fd;
+
+  --nuvora-teal: #4f968c;
+  --nuvora-teal-text: #2f6f66;
+  --nuvora-teal-soft: #e8f4f1;
+
+  --nuvora-amber: #bd8b3f;
+  --nuvora-amber-text: #6c4f24;
+  --nuvora-amber-soft: #faedd7;
+
+  --nuvora-ink: #292733;
+  --nuvora-text-secondary: #676370;
+
+  --shadow-card: 0 6px 18px rgba(41, 39, 51, 0.06);
+  --shadow-button: 0 8px 20px rgba(108, 92, 231, 0.22);
+}
+
+/* ---------- Shell ---------- */
+
+body {
+  background: #e9e4dc;
+}
+
+main {
+  background: linear-gradient(180deg, #eee9e2 0%, #e7e1d9 100%);
+}
+
+.phone {
+  background: var(--nuvora-bg);
+  border-color: rgba(255,255,255,.85);
+  box-shadow: 0 18px 48px rgba(41,39,51,.13);
+}
+
+header {
+  background: #f8f5f1;
+  border-bottom: 1px solid rgba(41,39,51,.05);
+}
+
+.content {
+  padding-top: 18px;
+}
+
+/* ---------- Stronger page titles ---------- */
+
+.page-title,
+.section-title {
+  margin-bottom: 8px;
+}
+
+h1 {
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  letter-spacing: -0.012em;
+}
+
+/* ---------- Today ---------- */
+
+.welcome {
+  padding-bottom: 4px;
+}
+
+.avatar {
+  background: #e9e5fb;
+  color: var(--nuvora-purple-dark);
+}
+
+.risk {
+  background: #fff0d8;
+  border: 1px solid rgba(189,139,63,.12);
+  box-shadow: none;
+}
+
+.risk.low {
+  background: #e9f5f1;
+  border-color: rgba(79,150,140,.12);
+}
+
+.risk.higher {
+  background: #f5e2d2;
+}
+
+.overwhelmed {
+  background: #fff9f7;
+  border: 1px solid rgba(165,86,107,.18);
+  color: #a25568;
+}
+
+.task.focus {
+  background: linear-gradient(180deg, #f1edff 0%, #ece7fb 100%);
+  border: 1px solid rgba(108,92,231,.08);
+  box-shadow: 0 8px 24px rgba(87,72,207,.08);
+}
+
+/* ---------- Generic panels ---------- */
+
+.panel,
+.task,
+.support-card {
+  border-radius: 18px;
+}
+
+.panel {
+  background: #fffdfb;
+  border-color: rgba(41,39,51,.055);
+  box-shadow: 0 7px 20px rgba(41,39,51,.055);
+}
+
+.support-card {
+  background: #f2effd;
+}
+
+/* ---------- Tasks ---------- */
+
+.tabs {
+  background: #e9e4f8;
+  padding: 5px;
+  border-radius: 16px;
+}
+
+.tabs button {
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.tabs button.active {
+  background: #ffffff;
+  color: var(--nuvora-purple-dark);
+  box-shadow: 0 3px 10px rgba(41,39,51,.07);
+}
+
+.row-task {
+  background: #fffdfb;
+  border: 1px solid rgba(41,39,51,.055);
+  border-left-width: 4px;
+  border-radius: 18px;
+  padding: 17px 12px 17px 10px;
+  box-shadow: 0 7px 18px rgba(41,39,51,.055);
+}
+
+.row-task[data-color="purple"] { border-left-color: #8a7cf0; }
+.row-task[data-color="teal"]   { border-left-color: #65aa9f; }
+.row-task[data-color="amber"]  { border-left-color: #c99749; }
+.row-task[data-color="blue"]   { border-left-color: #6f8fe7; }
+
+.row-task h2,
+.row-task h3 {
+  margin: 5px 0 7px;
+}
+
+.row-task .icon {
+  width: 38px;
+  height: 38px;
+}
+
+/* ---------- Progress ---------- */
+
+.stats {
+  gap: 8px;
+}
+
+.stats article {
+  min-height: 98px;
+  border: 0;
+  box-shadow: none;
+}
+
+.stats article:nth-child(1) {
+  background: #eeeafd;
+}
+
+.stats article:nth-child(2) {
+  background: #e7f4f1;
+}
+
+.stats article:nth-child(3) {
+  background: #faecd5;
+}
+
+.content > .panel {
+  margin-top: 12px;
+}
+
+.content > .panel:nth-of-type(1) {
+  border-top: 4px solid rgba(108,92,231,.20);
+}
+
+.content > .panel:nth-of-type(2) {
+  border-top: 4px solid rgba(79,150,140,.20);
+}
+
+/* ---------- Learn ---------- */
+
+.pick-card {
+  background: #f0ecff;
+  border: 1px solid rgba(108,92,231,.06);
+}
+
+.activity {
+  border-bottom-color: rgba(41,39,51,.06);
+}
+
+.activity-step {
+  background: #f3f0fd;
+}
+
+/* ---------- Buttons ---------- */
+
+.primary {
+  border-radius: 15px;
+  min-height: 50px;
+  background: var(--nuvora-purple);
+  box-shadow: var(--shadow-button);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--nuvora-purple-dark);
+}
+
+.option {
+  border: 1px solid rgba(41,39,51,.10);
+  border-radius: 14px;
+}
+
+.option.selected {
+  background: #ede9fb;
+  border-color: var(--nuvora-purple);
+}
+
+/* ---------- Inputs ---------- */
+
+.panel input,
+.panel select,
+.panel textarea,
+.auth input {
+  background: #fff;
+  border: 1.5px solid rgba(41,39,51,.14);
+  border-radius: 14px;
+}
+
+.panel input:focus,
+.panel select:focus,
+.panel textarea:focus,
+.auth input:focus {
+  outline: none;
+  border-color: var(--nuvora-purple);
+  box-shadow: 0 0 0 3px rgba(108,92,231,.14);
+}
+
+/* ---------- Auth: visibly more structured ---------- */
+
+.auth {
+  padding: 44px 26px;
+  justify-content: center;
+}
+
+.auth .logo {
+  margin: 0 0 22px;
+  justify-content: center;
+}
+
+.auth h1 {
+  margin: 0 0 10px;
+}
+
+.auth > p {
+  margin-bottom: 18px;
+}
+
+.auth form {
+  background: rgba(255,255,255,.62);
+  border: 1px solid rgba(41,39,51,.055);
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: 0 8px 24px rgba(41,39,51,.05);
+}
+
+.auth .tabs {
+  background: #ebe6fa;
+  margin-bottom: 16px;
+}
+
+.auth .primary {
+  margin-top: 16px;
+}
+
+/* ---------- Bottom navigation: stronger active state ---------- */
+
+nav {
+  height: 74px;
+  padding: 8px 10px 12px;
+  background: rgba(255,255,255,.98);
+  border-top: 1px solid rgba(41,39,51,.06);
+  box-shadow: 0 -5px 18px rgba(41,39,51,.04);
+}
+
+nav button {
+  position: relative;
+  min-height: 52px;
+  border-radius: 12px;
+}
+
+nav button.active {
+  color: var(--nuvora-purple-dark);
+  background: #f1edff;
+}
+
+nav button.active::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--nuvora-purple);
+}
+
+/* ---------- Settings ---------- */
+
+.setting {
+  padding: 14px 0;
+}
+
+.switch:checked {
+  background: var(--nuvora-purple);
+}
+
+/* ---------- Add/Edit sheet ---------- */
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(41,39,51,.24);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 8;
+}
+
+.sheet {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  top: auto;
+  z-index: 9;
+
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+
+  background: #fffdfb;
+  border: 1px solid rgba(255,255,255,.92);
+  border-radius: 24px;
+  padding: 0;
+
+  box-shadow: 0 18px 46px rgba(41,39,51,.16);
+}
+
+.sheet-header {
+  padding: 20px 20px 4px;
+}
+
+.sheet .panel {
+  box-shadow: none;
+  border: 0;
+  background: transparent;
+  padding: 8px 20px 20px;
+  margin: 0;
+}
+
+.sheet .row {
+  gap: 10px;
+}
+
+.sheet .row > button:not(.primary) {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(41,39,51,.10);
+  background: #f6f2ee;
+  font-weight: 800;
+}
+
+.sheet .primary {
+  margin-top: 0;
+}
+
+/* ---------- Calm mode ---------- */
+
+.calm {
+  --bg: #f5f3ef;
+}
+
+.calm .panel,
+.calm .task,
+.calm .support-card {
+  box-shadow: none;
+}
+
+/* ---------- Keyboard focus ---------- */
+
+:focus-visible {
+  outline: 3px solid rgba(108,92,231,.70);
+  outline-offset: 3px;
+}
+
+/* ---------- Mobile ---------- */
+
+@media (max-width: 500px) {
+  .content {
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-bottom: 104px;
+  }
+
+  .auth {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+}

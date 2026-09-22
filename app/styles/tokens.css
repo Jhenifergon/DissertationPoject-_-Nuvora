@@ -1,0 +1,88 @@
+/* ---------------------------------------------------------------------
+   Nuvora design tokens
+   -----------------------------------------------------------------------
+   A warm, calm, purposeful palette (see the design brief this migrates
+   from): the page background stays a soft warm neutral rather than white,
+   purple is the one primary accent, and lavender / teal / amber each carry
+   a distinct meaning (next step / calm & workload / gentle information)
+   rather than every card being white with the same border.
+
+   Contrast note: `--nuvora-purple` (#6E62E5) is used as a *background*
+   with white text (~4.6:1, passes WCAG AA) and for large/decorative
+   elements (icons, progress fills, selected borders) that don't need to
+   meet text-contrast ratios. Anywhere purple is used as small or bold
+   *text* on a light surface (links, active-tab labels, nav labels), this
+   file uses the darker `--nuvora-purple-dark` (#5B4FD1, ~6:1) instead, so
+   nothing regresses below AA. Likewise `--nuvora-text-muted` (#8A8A93, ~3.4:1 on white) is kept only
+   for non-text/decorative use. All readable secondary, metadata and small
+   text routes through the darker `--nuvora-text-secondary` (#6B6B76,
+   ~5.3:1 on white), including legacy `--muted2` usages.
+   --------------------------------------------------------------------- */
+:root {
+  /* Surfaces */
+  --nuvora-bg: #faf7f0;
+  --nuvora-bg-soft: #fcfaf5; /* Calm Mode's page background */
+  --nuvora-surface: #ffffff;
+
+  /* Purple — primary accent */
+  --nuvora-purple: #6e62e5;
+  --nuvora-purple-dark: #5b4fd1; /* text-safe variant, see note above */
+  --nuvora-purple-soft: #8b7fef; /* sparing secondary emphasis */
+
+  /* Lavender — next-step / explanatory / tab surfaces */
+  --nuvora-lavender: #edeafc;
+  --nuvora-lavender-soft: #f4f2fb;
+
+  /* Teal — calm / workload / completed / supportive */
+  --nuvora-teal: #4e9e93;
+  --nuvora-teal-text: #2e6e65; /* text-safe variant, see note above */
+  --nuvora-teal-soft: #eaf6f4;
+  --nuvora-teal-soft-2: #e3f3f0;
+
+  /* Amber — gentle information / moderate attention (never alarm-red) */
+  --nuvora-amber: #b98e45;
+  --nuvora-amber-text: #6b4f2a; /* text-safe variant, see note above */
+  --nuvora-amber-soft: #fbeeda;
+  --nuvora-amber-higher: #c4794f; /* the "Higher" pressure band — still warm, not red */
+  --nuvora-amber-higher-soft: #f6e6d6;
+
+  /* Blue — one extra module accent (Web Development), matching the original palette */
+  --nuvora-blue: #5b7fe0;
+  --nuvora-blue-text: #3a5bc7;
+  --nuvora-blue-soft: #eef2fc;
+
+  /* Ink & text */
+  --nuvora-ink: #2e2e38;
+  --nuvora-text-secondary: #6b6b76;
+  --nuvora-text-muted: #8a8a93; /* non-text/decorative use only — not normal readable copy */
+
+  --nuvora-line: rgba(58, 58, 66, 0.08);
+  --nuvora-line-soft: rgba(58, 58, 66, 0.06);
+
+  /* Radius scale */
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-pill: 999px;
+
+  /* Shadow scale — flat by design; a border carries most of the definition */
+  --shadow-card: 0 1px 3px rgba(58, 58, 66, 0.06);
+  --shadow-button: 0 6px 16px rgba(110, 98, 229, 0.24);
+
+  /* --- Legacy aliases -------------------------------------------------
+     Every rule below the token block still refers to these original
+     custom-property names, so the whole file's colour system updates by
+     changing the block above only. */
+  --purple: var(--nuvora-purple);
+  --purple-soft: var(--nuvora-lavender);
+  --mascot: var(--nuvora-purple-soft);
+  --ink: var(--nuvora-ink);
+  --muted: var(--nuvora-text-secondary);
+  --muted2: var(--nuvora-text-secondary); /* text-safe legacy alias */
+  --line: var(--nuvora-line);
+  --mint: var(--nuvora-teal-text);
+  --mint-soft: var(--nuvora-teal-soft);
+  --amber: var(--nuvora-amber-text);
+  --amber-soft: var(--nuvora-amber-soft);
+  --bg: var(--nuvora-bg);
+  --calm-bg: var(--nuvora-bg-soft);
+}

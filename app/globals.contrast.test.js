@@ -8,9 +8,21 @@ const cssPath = path.join(
   'globals.css'
 );
 
-const css = fs.readFileSync(
+const entryCss = fs.readFileSync(
   cssPath,
   'utf8'
+);
+
+// globals.css is now a manifest of ordered @import statements (see its own
+// header comment) rather than one long file — resolve those imports the
+// same way a browser/bundler would, so this test still sees the full
+// effective stylesheet.
+const css = entryCss.replace(
+  /@import\s+['"](.+?)['"];/g,
+  (_, importPath) => fs.readFileSync(
+    path.join(path.dirname(cssPath), importPath),
+    'utf8'
+  )
 );
 
 function hexToRgb(hex) {

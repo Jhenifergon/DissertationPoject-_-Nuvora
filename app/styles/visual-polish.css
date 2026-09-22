@@ -1,0 +1,270 @@
+/* =====================================================================
+   Nuvora visual polish — richer page identity without adding noise
+   ===================================================================== */
+
+/* Page headers now act as gentle colour anchors. The cloud mascot is the
+   consistent brand marker, while the small functional icon identifies
+   the section. */
+.page-title-card {
+  position: relative;
+  min-height: 104px;
+  margin: 4px 0 18px;
+  padding: 18px 18px 16px;
+  border-radius: 24px;
+  overflow: hidden;
+  gap: 14px;
+  border: 1px solid rgba(58,58,66,.055);
+  box-shadow: 0 8px 24px rgba(46,46,56,.055);
+}
+
+.page-title-card::before,
+.page-title-card::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: .48;
+}
+
+.page-title-card::before {
+  width: 110px;
+  height: 110px;
+  right: -34px;
+  top: -46px;
+  background: rgba(255,255,255,.55);
+}
+
+.page-title-card::after {
+  width: 58px;
+  height: 58px;
+  right: 58px;
+  bottom: -30px;
+  background: rgba(255,255,255,.35);
+}
+
+.page-title-card[data-tone="lavender"] {
+  background: linear-gradient(135deg, #f4f0ff 0%, #ebe7ff 100%);
+}
+.page-title-card[data-tone="teal"] {
+  background: linear-gradient(135deg, #edf8f5 0%, #def1ed 100%);
+}
+.page-title-card[data-tone="amber"] {
+  background: linear-gradient(135deg, #fff7e9 0%, #f9ead1 100%);
+}
+.page-title-card[data-tone="blue"] {
+  background: linear-gradient(135deg, #f1f5ff 0%, #e5edff 100%);
+}
+
+.page-title-copy {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+}
+
+.page-title-copy small {
+  margin-bottom: 5px;
+  color: var(--nuvora-text-secondary);
+  letter-spacing: .08em;
+}
+
+.page-title-card h1 {
+  margin: 0;
+  font-size: 1.48em;
+  line-height: 1.18;
+}
+
+.page-title-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.page-title-cloud {
+  width: 72px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  border-radius: 22px;
+  background: rgba(255,255,255,.56);
+  border: 1px solid rgba(255,255,255,.72);
+  box-shadow: 0 5px 16px rgba(46,46,56,.06);
+}
+
+.page-title-cloud .mascot {
+  filter: drop-shadow(0 5px 8px rgba(91,79,209,.12));
+}
+
+.page-title-icon {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  color: var(--nuvora-purple-dark);
+  box-shadow: 0 4px 12px rgba(46,46,56,.12);
+}
+
+.page-title-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.page-title-action {
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 5px 14px rgba(91,79,209,.18);
+}
+
+/* Today gets its own friendly hero instead of a plain heading/initial. */
+.welcome-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(244,240,255,.9), rgba(234,246,244,.9));
+  border: 1px solid rgba(110,98,229,.08);
+  border-radius: 24px;
+  padding: 17px 16px 13px;
+  margin: 2px 0 14px;
+  overflow: hidden;
+}
+
+.welcome-card::after {
+  content: "";
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  border-radius: 999px;
+  right: -30px;
+  top: -38px;
+  background: rgba(255,255,255,.38);
+}
+
+.welcome-card > div:first-child {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+}
+
+.welcome-card h1 {
+  margin: 3px 0 5px;
+  font-size: 1.42em;
+  max-width: 285px;
+}
+
+.welcome-cloud {
+  position: relative;
+  z-index: 1;
+  width: 70px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 20px;
+  background: rgba(255,255,255,.52);
+}
+
+/* More colour, but only on cards whose meaning benefits from it. */
+.panel-lavender {
+  background: linear-gradient(180deg, #fbfaff 0%, #f3f0ff 100%);
+  border-color: rgba(110,98,229,.10);
+}
+
+.panel-teal {
+  background: linear-gradient(180deg, #fbfffe 0%, #edf8f5 100%);
+  border-color: rgba(78,158,147,.12);
+}
+
+.panel-amber {
+  background: linear-gradient(180deg, #fffdf9 0%, #fff5e6 100%);
+  border-color: rgba(185,142,69,.13);
+}
+
+.panel-blue {
+  background: linear-gradient(180deg, #fbfcff 0%, #eef3ff 100%);
+  border-color: rgba(91,127,224,.12);
+}
+
+/* Learn choices: pastel differentiation helps scanning without turning the
+   screen into a rainbow. Selected states retain strong purple contrast. */
+.scale-vertical .option:nth-child(1) {
+  background: #f5f1ff;
+}
+.scale-vertical .option:nth-child(2) {
+  background: #eef8f6;
+}
+.scale-vertical .option:nth-child(3) {
+  background: #fff7e9;
+}
+.scale-vertical .option:nth-child(4) {
+  background: #eef4ff;
+}
+.scale-vertical .option:nth-child(5) {
+  background: #f7f2fb;
+}
+.scale-vertical .option:nth-child(6) {
+  background: #f5f4f1;
+}
+
+.scale-vertical .option.selected {
+  background: var(--nuvora-lavender);
+  border-color: var(--nuvora-purple);
+  box-shadow: 0 0 0 2px rgba(110,98,229,.08);
+}
+
+/* A little more identity on common action surfaces. */
+.checkin-card {
+  background: linear-gradient(135deg, #f4f0ff 0%, #edf4ff 100%);
+  border: 1px solid rgba(110,98,229,.09);
+}
+
+.checkin-card svg {
+  background: rgba(255,255,255,.62);
+  border-radius: 999px;
+  padding: 7px;
+  width: 34px;
+  height: 34px;
+}
+
+.task.focus {
+  background: linear-gradient(135deg, #f7f4ff 0%, #f0edff 100%);
+}
+
+.support-card {
+  background: linear-gradient(135deg, #f5f1ff 0%, #eef8f6 100%);
+}
+
+/* Nav remains simple, but every section has a slightly different active
+   tint so the app feels more alive without adding extra labels. */
+nav button:nth-child(1).active { background: #f1edff; }
+nav button:nth-child(2).active { background: #eef4ff; }
+nav button:nth-child(3).active { background: #f3efff; }
+nav button:nth-child(4).active { background: #edf8f5; }
+nav button:nth-child(5).active { background: #fff5e6; }
+
+/* Small-screen tuning for the richer header. */
+@media (max-width: 380px) {
+  .page-title-card {
+    min-height: 94px;
+    padding: 15px;
+  }
+
+  .page-title-cloud {
+    width: 62px;
+    height: 56px;
+  }
+
+  .page-title-cloud .mascot {
+    transform: scale(.9);
+  }
+
+  .page-title-card h1 {
+    font-size: 1.32em;
+  }
+}
