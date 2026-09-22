@@ -58,7 +58,6 @@ app/
   layout.js            Root HTML shell, fonts, metadata
   page.js               The single route "/" — renders <NuvoraApp/>
   globals.css           All CSS for the whole app (no CSS-in-JS)
-  api/risk/route.js     A POST endpoint that runs the same scoring function
 components/
   NuvoraApp.jsx          The entire UI: ~30 components in one file, all
                           the app's "screens" and shared widgets
@@ -81,9 +80,13 @@ lib/
 
 Nuvora is a **client-heavy** app: almost the entire UI lives in one
 `'use client'` component tree (`components/NuvoraApp.jsx`), and the `app/`
-directory is a thin Next.js shell around it. The one real server-side piece
-is `app/api/risk/route.js`, and even that duplicates logic the client also
-runs locally (see below for why).
+directory is a thin Next.js shell around it. There is no server-side piece —
+`calculatePressure()` runs entirely client-side (see §5), which is what
+lets the app ship as a static export for the Android/Capacitor build (see
+`docs/ANDROID_BUILD.md`). An earlier `app/api/risk/route.js` Route Handler
+duplicated the same scoring logic as a POST endpoint; it was never called by
+the UI and was removed because Next.js static export cannot contain server
+Route Handlers.
 
 ---
 
@@ -127,34 +130,14 @@ client-side inside `NuvoraApp` via a `screen` state variable (see §5). This
 keeps the app feeling like a native mobile app (a single "phone" card that
 swaps its content) rather than a traditional multi-page website.
 
-## 4. `app/api/risk/route.js` — the scoring API route
+## 4. Scoring runs entirely client-side
 
-```js
-import { NextResponse } from 'next/server';
-import { calculatePressure } from '@/lib/risk';
-
-export async function POST(request) {
-  try {
-    return NextResponse.json(calculatePressure(await request.json()));
-  } catch (error) {
-    return NextResponse.json({ error: 'Please answer every check-in question.' }, { status: 400 });
-  }
-}
-```
-
-A minimal Next.js Route Handler: `POST /api/risk` accepts a check-in payload
-and returns `calculatePressure()`'s result (see §5 of the `lib/` walkthrough
-below) as JSON. If the payload doesn't validate against the zod schema inside
-`calculatePressure`, it catches the thrown error and returns a 400 with a
-friendly message rather than a stack trace.
-
-**Important nuance:** the actual check-in flow in `NuvoraApp.jsx` does *not*
-call this endpoint — it calls `calculatePressure()` directly, client-side (see
-the comment in `Checkin`'s `next()` function). The API route exists so the
-same deterministic scoring logic is available as a server endpoint (useful
-for testing, for a future non-browser client, or for anyone auditing the
-model from outside the client bundle) without duplicating the maths — both
-paths import from the same `lib/risk.js`.
+The check-in flow in `NuvoraApp.jsx` calls `calculatePressure()` directly,
+client-side (see the comment in `Checkin`'s `next()` function) — it never
+makes a network request to score a check-in. This is deliberate: it keeps
+the core scoring path available offline (important for the Android/Capacitor
+build, see `docs/ANDROID_BUILD.md`) and lets the whole app ship as a static
+export with no server runtime.
 
 ---
 
@@ -1152,8 +1135,8 @@ from the root component.
   it deliberately does **not** substitute a neutral guessed value — it saves
   the check-in with `risk: null, incomplete: true` and shows the "That's
   okay" screen instead of silently calculating a band from partial data.
-  Otherwise it runs `calculatePressure(answers)` (client-side, **not** via
-  the `/api/risk` route — see §4 for why), combines it with current task
+  Otherwise it runs `calculatePressure(answers)` client-side (see §4),
+  combines it with current task
   deadlines via `combineWorkloadPressure`, saves via `saveCheckin` *before*
   updating local state (so a failed save never shows a "successful" result
   screen), and stores the result.

@@ -2,6 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Heart, Home, Leaf, ListTodo, LogOut, Menu, Settings, Shield, TrendingUp } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { Keyboard, KeyboardResize } from '@capacitor/keyboard';
 import { auth, firebaseEnabled } from '@/lib/firebase';
 import { defaultSettings, loadData, saveSettings } from '@/lib/store';
 import { CALM_SESSION_DEFAULTS, GENERIC_ERROR } from '@/components/constants';
@@ -65,6 +68,21 @@ export default function NuvoraApp() {
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
     };
+  }, []);
+
+  // Native (iOS/Android) shell setup. Nuvora's background is a light warm
+  // cream (see tokens.css), so the status bar needs dark icons/text rather
+  // than the platform default, which on iOS is otherwise easy to end up
+  // invisible against a light header. The Keyboard plugin's native resize
+  // mode stops the iOS keyboard covering fixed-position inputs lower on a
+  // screen (a WKWebView, unlike a normal Safari tab, does not resize/scroll
+  // the layout for the keyboard on its own). Both are no-ops on the web.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+    if (Capacitor.getPlatform() === 'ios') {
+      Keyboard.setResizeMode({ mode: KeyboardResize.Native }).catch(() => {});
+    }
   }, []);
 
   // Calm Mode is a temporary demand-reduction layer. If the student turns

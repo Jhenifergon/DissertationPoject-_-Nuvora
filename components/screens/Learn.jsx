@@ -9,6 +9,7 @@ import { GENERIC_ERROR } from '@/components/constants';
 import { PageTitle } from '@/components/ui/PageTitle';
 import { StatusMessage } from '@/components/ui/StatusMessage';
 import { FocusTimer } from '@/components/ui/FocusTimer';
+import { ExternalLink } from '@/components/ui/ExternalLink';
 
 export function Learn({ calmMode, data, uid, setData, go }) {
   const [showMoreTools, setShowMoreTools] = useState(false);
@@ -195,7 +196,7 @@ export function Learn({ calmMode, data, uid, setData, go }) {
       <h2>Use another person as quiet company, not as a supervisor.</h2>
       <p>Choose the kind of presence that feels useful. You do not have to explain the task.</p>
       <button className="option" onClick={copyBodyDoubleMessage}>Copy a message asking someone to join me</button>
-      <a className="option" href="https://www.youtube.com/watch?v=wYxDJOFgDw0" target="_blank" rel="noopener noreferrer">Optional Study With Me video ↗</a>
+      <ExternalLink className="option" href="https://www.youtube.com/watch?v=wYxDJOFgDw0">Optional Study With Me video ↗</ExternalLink>
       <StatusMessage text={supportStatus.text} tone={supportStatus.tone} />
       <p className="hint">External YouTube link. It is optional and never starts automatically.</p>
     </article>;
@@ -367,9 +368,9 @@ export function Learn({ calmMode, data, uid, setData, go }) {
       <details>
         <summary>Wellbeing and sensory resources — optional</summary>
         <p className="hint">These resources open outside Nuvora and are completely optional.</p>
-        <a className="option" href="https://www.nhs.uk/every-mind-matters/" target="_blank" rel="noopener noreferrer">NHS Every Mind Matters ↗</a>
-        <a className="option" href="https://www.adhdfoundation.org.uk/resources/" target="_blank" rel="noopener noreferrer">ADHD Foundation resources ↗</a>
-        <a className="option" href="https://www.autism.org.uk/advice-and-guidance/about-autism/sensory-processing" target="_blank" rel="noopener noreferrer">National Autistic Society: sensory processing ↗</a>
+        <ExternalLink className="option" href="https://www.nhs.uk/every-mind-matters/">NHS Every Mind Matters ↗</ExternalLink>
+        <ExternalLink className="option" href="https://www.adhdfoundation.org.uk/resources/">ADHD Foundation resources ↗</ExternalLink>
+        <ExternalLink className="option" href="https://www.autism.org.uk/advice-and-guidance/about-autism/sensory-processing">National Autistic Society: sensory processing ↗</ExternalLink>
       </details>
       <p className="hint">External resources are optional and are not a replacement for professional support.</p>
     </article>

@@ -8,7 +8,7 @@ Nuvora is a privacy-first, non-diagnostic academic workload and microlearning su
 - Firebase email/password authentication and per-user Firestore storage
 - Fully usable local demo mode when Firebase variables are absent
 - Tasks, deadlines, automatic micro-step creation and completion
-- Five-question daily check-in and explainable rule-based scoring API
+- Five-question daily check-in and explainable, client-side rule-based scoring
 - Low, Moderate and Higher workload-pressure support
 - Overwhelmed Mode, calm mode, reduced motion and adjustable text size
 - Microlearning resets, progress trends and user-controlled support summary

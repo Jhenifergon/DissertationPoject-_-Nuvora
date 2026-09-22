@@ -1,7 +1,11 @@
 node_modules
 .next
+out
 .env.local
 coverage
 *.log
 
 serviceAccountKey.json
+
+# Debug/release APKs built locally for phone testing
+*.apk

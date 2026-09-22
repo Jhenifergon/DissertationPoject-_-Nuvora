@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nuvora</string>
+    <string name="title_activity_main">Nuvora</string>
+    <string name="package_name">com.nuvora.dissertation</string>
+    <string name="custom_url_scheme">com.nuvora.dissertation</string>
+</resources>
