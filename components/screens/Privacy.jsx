@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ChevronLeft, Download, Shield, Trash2 } from 'lucide-react';
 import { deleteAccount, firebaseEnabled, reauthenticate } from '@/lib/firebase';
 import { authErrorMessage } from '@/lib/authErrors';
-import { defaultSettings, deleteAllData, deleteCheckinHistory, deleteCompletedTasks, exportAllData } from '@/lib/store';
+import { defaultSettings, defaultStats, deleteAllData, deleteCheckinHistory, deleteCompletedTasks, exportAllData } from '@/lib/store';
 import { GENERIC_ERROR } from '@/components/constants';
 import { PageTitle } from '@/components/ui/PageTitle';
 import { StatusMessage } from '@/components/ui/StatusMessage';
@@ -21,7 +21,22 @@ function downloadJson(obj, filename) {
   URL.revokeObjectURL(url);
 }
 
-export function Privacy({ uid, data, setData, updateSettings, go }) {
+// Privacy & data: plain-language explanations first, then the controls.
+// Each delete option removes exactly what its label says and nothing else,
+// and every one asks for confirmation; the two "everything" options also
+// require typing DELETE, because they cannot be undone.
+//  • Export: downloads everything loadData returns as a JSON file. In
+//    Firebase mode, timestamps appear as {seconds, nanoseconds} objects.
+//  • Delete all my data: in Firebase mode this deletes the tasks, check-ins
+//    and reflections collections and the users/{uid} document; this screen
+//    then saves the default settings, which creates that document again
+//    holding only default preferences. In demo mode the browser store is
+//    replaced with an empty one (not removed, which would bring the sample
+//    data back).
+//  • Delete my account (Firebase only): the password is checked first, then
+//    the data is deleted, then the sign-in account. Firestore and Firebase
+//    Auth are separate services, so this is not a single atomic operation.
+export function Privacy({ uid, data, setData, updateSettings, back }) {
   const [busy, setBusy] = useState(null);
   const [status, setStatus] = useState({ text: '', tone: 'status' });
   const [confirmAll, setConfirmAll] = useState('');
@@ -77,7 +92,7 @@ export function Privacy({ uid, data, setData, updateSettings, go }) {
     if (!window.confirm('This permanently deletes everything Nuvora has stored for you — tasks, check-ins, reflections, and settings. Continue?')) return;
     run('all', async () => {
       await deleteAllData(uid);
-      setData(d => ({ ...d, tasks: [], checkins: [], reflections: [] }));
+      setData(d => ({ ...d, tasks: [], checkins: [], reflections: [], stats: defaultStats }));
       await updateSettings(defaultSettings);
       setConfirmAll('');
     }, 'All your Nuvora data has been deleted.');
@@ -106,7 +121,7 @@ export function Privacy({ uid, data, setData, updateSettings, go }) {
       // been touched yet.
       await reauthenticate(password);
       await deleteAllData(uid);
-      setData(d => ({ ...d, tasks: [], checkins: [], reflections: [] }));
+      setData(d => ({ ...d, tasks: [], checkins: [], reflections: [], stats: defaultStats }));
       await deleteAccount();
       // A successful deletion signs the student out; onAuthStateChanged
       // (in the top-level component) picks that up and returns to Auth
@@ -119,12 +134,8 @@ export function Privacy({ uid, data, setData, updateSettings, go }) {
   }
 
   return <>
-    <button className="back" onClick={() => go('today')}><ChevronLeft /> Today</button>
+    <button className="back" onClick={back.go}><ChevronLeft /> {back.label}</button>
     <PageTitle title="Privacy & data" tone="blue" icon={<Shield />} />
-
-    <details className="panel"><summary>Offline storage</summary>
-      <p>Signed-in Firebase mode does not enable persistent browser caching by default. This reduces the chance of check-in data remaining on a shared device after the browser session. Demo mode stores its sample data locally in this browser.</p>
-    </details>
 
     <details className="panel"><summary>What Nuvora stores</summary>
       <p>Your tasks and their small steps, your daily check-in answers and the workload-pressure result calculated from them, any weekly reflections you write, your accessibility preferences, and a small count of how many steps you've completed and which support strategies you've used.</p>
@@ -135,8 +146,12 @@ export function Privacy({ uid, data, setData, updateSettings, go }) {
     </details>
 
     <details className="panel"><summary>Who can see your information</summary>
-      <p>{firebaseEnabled ? 'In your account on Firebase (Google Cloud), accessible only to you — see the Firestore security rules for how that’s enforced.' : 'Nowhere but this browser. Nuvora is running in local demo mode: everything is stored in this browser’s local storage and never leaves this device. Clearing your browser data or using a different browser will lose it.'}</p>
+      <p>{firebaseEnabled ? 'Only you. It’s stored in your Nuvora account on Firebase (Google Cloud), and the database is set up so only your signed-in account can read it.' : 'Nowhere but this browser. Nuvora is running in local demo mode: everything is stored in this browser’s local storage and never leaves this device. Clearing your browser data or using a different browser will lose it.'}</p>
       <p>Your data is <b>never automatically sent to tutors</b>, your university, or anyone else — the Support screen's "copy summary" only ever copies text to your own clipboard, for you to send yourself if you choose to.</p>
+    </details>
+
+    <details className="panel"><summary>Offline and shared devices</summary>
+      <p>When you’re signed in, Nuvora doesn’t keep a lasting copy of your data in this browser, so it’s less likely to be left behind on a shared device. If you go offline, keep the app open so your changes can finish saving. Demo mode keeps its sample data in this browser only.</p>
     </details>
 
     <details className="panel"><summary>About the workload-pressure result</summary>
@@ -152,7 +167,7 @@ export function Privacy({ uid, data, setData, updateSettings, go }) {
       <div className="panel" style={{ margin: '10px 0', boxShadow: 'none' }}>
         <h3>Check-in &amp; reflection history</h3>
         <p>Removes every check-in and reflection. Your tasks and settings are left untouched.</p>
-        <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCheckins}><Trash2 /> {busy === 'checkins' ? 'Deleting…' : 'Delete check-in history'}</button>
+        <button className="danger-btn" disabled={!!busy} onClick={handleDeleteCheckins}><Trash2 /> {busy === 'checkins' ? 'Deleting…' : 'Delete check-ins and reflections'}</button>
       </div>
       <div className="panel" style={{ margin: '10px 0', boxShadow: 'none' }}>
         <h3>Completed tasks</h3>

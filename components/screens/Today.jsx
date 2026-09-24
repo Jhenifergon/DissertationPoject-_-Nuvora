@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { Check, Heart, Leaf, Pencil, Settings, Sparkles } from 'lucide-react';
-import { completeCurrentStep, recordStepCompleted, setCurrentStep } from '@/lib/store';
+import { completeCurrentStep, recordStepCompleted, setCurrentStep, withStepCounted } from '@/lib/store';
 import { effectiveBucket, relativeDueLabel } from '@/lib/dates';
 import { recommendAction } from '@/lib/recommendation';
-import { makeCustomStep, nextStepAfter, suggestAlternativeSteps } from '@/lib/steps';
+import { makeCustomStep, nextStepAfter, suggestAlternativeSteps, withStep, withStepDone } from '@/lib/steps';
 import { explainPressure } from '@/lib/explain';
 import { displayNameOrFallback, timeOfDayGreeting } from '@/lib/greeting';
 import { moduleColor } from '@/lib/modules';
@@ -15,8 +15,28 @@ import { StatusMessage } from '@/components/ui/StatusMessage';
 import { Setting } from '@/components/ui/Setting';
 import { Empty } from '@/components/ui/Empty';
 
+// Today is the home screen. It shows the latest pressure result (or an
+// invitation to check in), a way into Overwhelmed Mode, and ONE recommended
+// next step from lib/recommendation.js — the same task Overwhelmed Mode
+// would pick.
+//
+// Calm Mode is handled here as a small set of alternative views, checked in
+// this order:
+//   1. Leaving Calm Mode — a choice of where to go, with nothing marked done.
+//   2. "Stop for now" — confirms the student can stop; their place is saved.
+//   3. Welcome back — offers the saved restart point before anything new.
+//   4. Calm Mode itself — one task, one step, two main buttons (only when
+//      there is an open task to suggest).
+//   5. Otherwise, the normal dashboard (with Calm Mode's softer styling if
+//      it is on).
+// The restart point ("restartMemory") is saved with the student's settings,
+// so it survives closing the app. The four calm-session preferences
+// (hide deadlines, hide numbers, less detail, less motion) are deliberately
+// temporary and reset each time Calm Mode is switched on.
 export function Today({ data, go, uid, setData, settings, updateSettings, settingsBusy, calmSession, setCalmSession, pausedThisSession, setPausedThisSession, restartAcknowledged, setRestartAcknowledged, showCalmExit, setShowCalmExit }) {
   const [calmSettingsOpen, setCalmSettingsOpen] = useState(false);
+  // Only the most recent check-in counts. If it was incomplete ("Not sure"
+  // answers) it has no band, and Today simply invites a new check-in.
   const risk = data.checkins[0]?.risk;
   const recommendation = recommendAction(data.tasks, risk?.band);
   const restartMemory = settings.restartMemory;
@@ -48,25 +68,31 @@ export function Today({ data, go, uid, setData, settings, updateSettings, settin
       stoppedAt: new Date().toISOString(),
     };
 
-    await updateSettings({ ...settings, restartMemory: restartPoint });
+    // Only say "Your place is saved" once it actually is.
+    if (!(await updateSettings({ ...settings, restartMemory: restartPoint }))) return;
     setRestartAcknowledged(false);
     setPausedThisSession(true);
   }
 
   async function clearRestartMemory() {
     if (settingsBusy) return;
-    await updateSettings({ ...settings, restartMemory: null });
+    if (!(await updateSettings({ ...settings, restartMemory: null }))) return;
     setRestartAcknowledged(false);
   }
 
   async function leaveCalmMode(destination = 'today') {
     if (settingsBusy) return;
-    await updateSettings({ ...settings, calmMode: false });
+    if (!(await updateSettings({ ...settings, calmMode: false }))) return;
     setShowCalmExit(false);
     setPausedThisSession(false);
     setRestartAcknowledged(false);
     go(destination);
   }
+
+  // The focused task already has its own card above, so the list below
+  // shows only the other things due today rather than repeating it.
+  const focusTaskId = recommendation?.task.id;
+  const todaysTasks = data.tasks.filter(t => effectiveBucket(t) === 'today' && !t.done && t.id !== focusTaskId).slice(0, 3);
 
   if (settings.calmMode && showCalmExit) {
     return <div className="calm-focus">
@@ -167,9 +193,10 @@ export function Today({ data, go, uid, setData, settings, updateSettings, settin
 
   // Genuine Calm Mode: rather than only changing colours, this collapses
   // the whole dashboard to the single next step when Calm Mode is on —
-  // one primary action, no stats, no secondary explanations. Everything
-  // else stays reachable via the nav bar underneath, so no functionality
-  // is lost, just decluttered.
+  // one primary action, no stats, no secondary explanations. Nothing is
+  // deleted or switched off: the plan is one tap away ("Open my plan"),
+  // Support stays in the reduced nav bar, and Learn and Progress come back
+  // as soon as the student leaves Calm Mode.
   if (settings.calmMode && recommendation) {
     return <div className="calm-focus">
       {!calmSession.reduceVisualDetail && <Mascot size={70} mood="calm" />}
@@ -279,8 +306,7 @@ export function Today({ data, go, uid, setData, settings, updateSettings, settin
           className="primary"
           disabled={settingsBusy}
           onClick={async () => {
-            await updateSettings({ ...settings, calmMode: true });
-            setRestartAcknowledged(true);
+            if (await updateSettings({ ...settings, calmMode: true })) setRestartAcknowledged(true);
           }}
         >
           Continue gently
@@ -300,7 +326,7 @@ export function Today({ data, go, uid, setData, settings, updateSettings, settin
           <div><b>Check in when it would help</b><span>A few gentle questions · skip anytime</span></div>
           <Sparkles />
         </button>
-      : <RiskCard risk={risk} tasks={data.tasks} onUpdate={() => go('checkin')} />}
+      : <RiskCard risk={risk} tasks={data.tasks} onUpdate={() => go('checkin')} hideNumbers={settings.calmMode && calmSession.hideProgressNumbers} />}
     <button className="overwhelmed" onClick={() => go('overwhelmed')}><Heart /> I’m feeling overwhelmed</button>
     <div className="section-title"><h2>One small next step</h2><button onClick={() => go('tasks')}>View plan</button></div>
     {recommendation ? <FocusTask key={recommendation.task.id} task={recommendation.task} actionText={recommendation.actionText} uid={uid} setData={setData} /> : (
@@ -308,15 +334,17 @@ export function Today({ data, go, uid, setData, settings, updateSettings, settin
         ? <div className="empty"><Leaf /><h2>Your space is ready.</h2><p>Add one thing that's currently on your mind. It doesn't need to be your biggest task.</p><button className="primary" style={{ width: 'auto', padding: '12px 22px' }} onClick={() => go('tasks')}>+ Add one task</button><button className="link" onClick={() => go('checkin')}>Take a short check-in first</button></div>
         : <Empty title="Your plan is clear" text="That is enough for today." />
     )}
-    <h2>Today’s plan</h2>
-    {data.tasks.filter(t => effectiveBucket(t) === 'today' && !t.done).slice(0, 3).map(t => <MiniTask key={t.id} task={t} />)}
+    {todaysTasks.length > 0 && <h2>{focusTaskId ? 'Also on today’s plan' : 'Today’s plan'}</h2>}
+    {todaysTasks.map(t => <MiniTask key={t.id} task={t} />)}
   </>;
 }
 
-function RiskCard({ risk, tasks, onUpdate }) {
+// `hideNumbers`: Calm Mode's "Hide progress numbers" — the band and
+// explanation stay, the score itself is not shown.
+function RiskCard({ risk, tasks, onUpdate, hideNumbers = false }) {
   const explanation = explainPressure(risk, tasks);
   return <article className={`risk ${risk.band.toLowerCase()}`}>
-    <div className="score" aria-hidden="true">{risk.score}</div>
+    {!hideNumbers && <div className="score" aria-hidden="true">{risk.score}</div>}
     <div className="risk-copy">
       <h3>Workload pressure · {risk.band}</h3>
       <p>{risk.message}</p>
@@ -331,7 +359,7 @@ function RiskCard({ risk, tasks, onUpdate }) {
 
       <details>
         <summary>Why this result?</summary>
-        <p className="hint">Pressure estimate: {risk.score}/100 — a supportive estimate, not a diagnosis.</p>
+        {!hideNumbers && <p className="hint">Pressure estimate: {risk.score}/100 — a supportive estimate, not a diagnosis.</p>}
         <ul className="explanation-list">{explanation.map((line, i) => <li key={i}>{line}</li>)}</ul>
       </details>
     </div>
@@ -350,17 +378,15 @@ function FocusTask({ task, actionText, uid, setData }) {
   const [status, setStatus] = useState({ text: '', tone: 'status' });
   const stepDone = task.currentStep?.done;
 
-  function applyLocally(updatedTask) {
-    setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updatedTask : t)) }));
-  }
-
-  async function run(action, successText) {
+  // `patch` applies the same change to local state that `persist` saved —
+  // the store's return value is not used (it is empty in Firestore mode).
+  async function run(persist, patch, successText) {
     if (busy) return;
     setBusy(true);
     setStatus({ text: '', tone: 'status' });
     try {
-      const updated = await action();
-      if (updated) applyLocally(updated);
+      await persist();
+      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? patch(t) : t)) }));
       setStatus({ text: successText, tone: 'status' });
       setMode('view');
     } catch {
@@ -380,19 +406,23 @@ function FocusTask({ task, actionText, uid, setData }) {
       <label>Edit this step<textarea value={draftText} onChange={e => setDraftText(e.target.value)} rows={2} /></label>
       <div className="row">
         <button onClick={() => setMode('view')} disabled={busy}>Cancel</button>
-        <button className="primary" disabled={busy || !draftText.trim()} onClick={() => run(async () => setCurrentStep(uid, task.id, makeCustomStep(task, draftText)), 'Step updated.')}>Save</button>
+        <button className="primary" disabled={busy || !draftText.trim()} onClick={() => { const step = makeCustomStep(task, draftText); run(() => setCurrentStep(uid, task.id, step), t => withStep(t, step), 'Step updated.'); }}>Save</button>
       </div>
     </div>}
     {mode === 'choosing' && <div className="panel">
       <p>Try a different small step:</p>
       {suggestAlternativeSteps(task).map(alt => (
-        <button key={alt.id} className="option" disabled={busy} onClick={() => run(async () => setCurrentStep(uid, task.id, alt), 'Step updated.')}>{alt.text}</button>
+        <button key={alt.id} className="option" disabled={busy} onClick={() => run(() => setCurrentStep(uid, task.id, alt), t => withStep(t, alt), 'Step updated.')}>{alt.text}</button>
       ))}
       <button onClick={() => setMode('view')} disabled={busy}>Cancel</button>
     </div>}
 
     {mode === 'view' && !stepDone && <div className="row">
-      <button className="primary" disabled={busy} onClick={() => run(async () => { const updated = await completeCurrentStep(uid, task.id, true); await recordStepCompleted(uid); return updated; }, 'Saved. That step is done — the assignment stays open until you choose to complete it.')}>
+      <button className="primary" disabled={busy} onClick={() => run(async () => {
+        await completeCurrentStep(uid, task.id, true);
+        // The count is secondary: a failure here must not report the step itself as unsaved.
+        await recordStepCompleted(uid).then(() => setData(d => ({ ...d, stats: withStepCounted(d.stats) })), () => {});
+      }, t => withStepDone(t), 'Saved. That step is done — the assignment stays open until you choose to complete it.')}>
         <Check /> {busy ? 'Saving…' : 'Mark this step done'}
       </button>
       <button disabled={busy} onClick={() => { setDraftText(task.currentStep?.text || ''); setMode('editing'); }}><Pencil /> Edit</button>
@@ -400,7 +430,7 @@ function FocusTask({ task, actionText, uid, setData }) {
     </div>}
     {mode === 'view' && stepDone && <div className="row">
       <span className="step-complete-badge"><Check /> Step complete</span>
-      <button disabled={busy} onClick={() => run(async () => setCurrentStep(uid, task.id, nextStepAfter(task)), 'Here is a next small step.')}>Generate next step</button>
+      <button disabled={busy} onClick={() => { const step = nextStepAfter(task); run(() => setCurrentStep(uid, task.id, step), t => withStep(t, step), 'Here is a next small step.'); }}>Generate next step</button>
     </div>}
     <StatusMessage text={status.text} tone={status.tone} />
   </article>;

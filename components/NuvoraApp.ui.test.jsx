@@ -205,11 +205,11 @@ describe('privacy: offline storage is explained clearly', () => {
     fireEvent.click(await screen.findByText('Privacy & data'));
     await screen.findByRole('heading', { name: 'Privacy & data' });
 
-    fireEvent.click(screen.getByText('Offline storage'));
+    fireEvent.click(screen.getByText('Offline and shared devices'));
 
     expect(
       screen.getByText(
-        /Signed-in Firebase mode does not enable persistent browser caching by default/
+        /doesn’t keep a lasting copy of your data in this browser/
       )
     ).toBeInTheDocument();
   });
@@ -225,8 +225,8 @@ describe('navigation: every screen reachable without the bottom nav must have a 
 
   const screensToCheck = [
     {
-      openVia: 'Accessibility settings',
-      arriveAt: 'Calm accessibility settings',
+      openVia: 'Settings',
+      arriveAt: 'Settings',
     },
     {
       openVia: 'Privacy & data',
@@ -249,6 +249,35 @@ describe('navigation: every screen reachable without the bottom nav must have a 
   }
 });
 
+
+describe('navigation: Settings and Privacy return to the screen they were opened from', () => {
+  // Regression test: their back button always went to Today, even when
+  // opened from Support (or from the menu on any other screen).
+  it('Support -> Settings -> back returns to Support', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(within(document.querySelector('nav')).getByRole('button', { name: 'Support' }));
+    await screen.findByText('A summary you control');
+    fireEvent.click(screen.getByRole('button', { name: /^Settings/ }));
+    await screen.findByText('Settings', { selector: 'h1' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Support' }));
+    await screen.findByText('A summary you control');
+  });
+
+  it('Progress -> menu -> Privacy & data -> back returns to Progress', async () => {
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(within(document.querySelector('nav')).getByRole('button', { name: 'Progress' }));
+    await screen.findByText('Progress, without pressure');
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    fireEvent.click(await screen.findByText('Privacy & data'));
+    await screen.findByText('Privacy & data', { selector: 'h1' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    await screen.findByText('Progress, without pressure');
+  });
+});
 
 describe('task modal keyboard accessibility', () => {
   it('moves focus into Add task, traps Tab, closes on Escape, and returns focus to the trigger', async () => {
@@ -1125,3 +1154,71 @@ describe('final accessibility hardening', () => {
   });
 });
 
+
+describe('Today: the focused task is not repeated in the list below it', () => {
+  it('lists only the other tasks due today, under "Also on today’s plan"', async () => {
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const due = tomorrow.toISOString().slice(0, 10);
+    const task = (id, title, priority) => ({ id, title, module: 'Dissertation', due, priority, bucket: 'today', done: false, taskType: 'general', currentStep: { id: `${id}-s`, text: `Step for ${title}`, done: false, completedAt: null } });
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [task('a', 'Focused essay', 'high'), task('b', 'Second reading', 'normal')],
+      checkins: [], reflections: [], settings: {}, stats: {},
+    }));
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+
+    expect(screen.getAllByText('Focused essay')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Also on today’s plan' })).toBeInTheDocument();
+    expect(screen.getByText('Second reading')).toBeInTheDocument();
+  });
+});
+
+describe('Calm Mode applies beyond Today', () => {
+  // Regression: Calm Mode used to change only Today (and Tasks). Its
+  // "Hide progress numbers" preference now also covers Today's pressure
+  // card and the check-in result, and Support folds its long summary away.
+  function seedCalm(checkins = []) {
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({
+      tasks: [], checkins, reflections: [], settings: { calmMode: true }, stats: {},
+    }));
+  }
+  const scored = { id: '1', answers: {}, risk: { score: 42, band: 'Moderate', factors: { workload: 50, taskInitiation: 50, focus: 50, rest: 50, confidence: 50 }, message: 'x' }, createdAt: new Date().toISOString() };
+
+  it('Support: the summary is behind "Show the summary", and Copy still works', async () => {
+    seedCalm([scored]);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(within(document.querySelector('nav')).getByRole('button', { name: 'Support' }));
+    await screen.findByText('A summary you control');
+
+    const disclosure = screen.getByText('Show the summary').closest('details');
+    expect(disclosure).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy summary' }));
+    expect(await screen.findByText('Copied to your clipboard.')).toBeInTheDocument();
+  });
+
+  it('Today: the pressure score number is hidden, the band is not', async () => {
+    seedCalm([scored]);
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    expect(screen.getByText(/Workload pressure · Moderate/)).toBeInTheDocument();
+    expect(document.querySelector('.risk .score')).toBeNull();
+    expect(screen.queryByText(/Pressure estimate: 42\/100/)).not.toBeInTheDocument();
+  });
+
+  it('Check-in result: shows the band and explanation without the score', async () => {
+    seedCalm();
+    render(<NuvoraApp />);
+    await screen.findByText('How are things feeling, there?');
+    fireEvent.click(screen.getByText('Check in when it would help'));
+    for (let i = 0; i < 5; i++) {
+      const group = await screen.findByRole('radiogroup');
+      fireEvent.click(within(group).getAllByRole('radio')[1]);
+      fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    }
+    await screen.findByText('WORKLOAD PRESSURE');
+    expect(screen.getByText('Why this result?')).toBeInTheDocument();
+    expect(screen.queryByText(/Pressure estimate:/)).not.toBeInTheDocument();
+  });
+});

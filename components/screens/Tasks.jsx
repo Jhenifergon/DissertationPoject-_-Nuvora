@@ -47,6 +47,14 @@ function TaskForm({ initial, tasks, onCancel, onSave, saving }) {
   </form>;
 }
 
+// The student's plan. Tasks are grouped into Today / Week / Later, but the
+// group is worked out from the due date each time (lib/dates.js
+// effectiveBucket), so a task moves forward on its own as the date gets
+// closer — the tab it was created on only matters when it has no due date.
+// Each new task starts with a fixed first micro-step for its task type
+// (lib/steps.js). Completing a task shows an Undo option, and deleting asks
+// for confirmation, so a mis-tap is easy to recover from. In Calm Mode only
+// the Today tab is shown until the student asks for the others.
 export function Tasks({ data, uid, setData, calmMode, calmSession = CALM_SESSION_DEFAULTS }) {
   const [tab, setTab] = useState('today');
   const [adding, setAdding] = useState(false);
@@ -90,8 +98,10 @@ export function Tasks({ data, uid, setData, calmMode, calmSession = CALM_SESSION
     setSaving(true);
     setError('');
     try {
-      const updated = await updateTask(uid, id, fields);
-      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === id ? updated : t)) }));
+      // updateTask resolves to nothing in Firestore mode, so the edit is
+      // applied to the local copy rather than replaced by a return value.
+      await updateTask(uid, id, fields);
+      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === id ? { ...t, ...fields } : t)) }));
       setEditingId(null);
     } catch {
       setError(GENERIC_ERROR);

@@ -6,10 +6,15 @@ import { explainPressure } from '@/lib/explain';
 import { PageTitle } from '@/components/ui/PageTitle';
 import { StatusMessage } from '@/components/ui/StatusMessage';
 
-export function Support({ data, settings, go }) {
+// The support summary helps a student explain their situation to a tutor
+// or support service without having to find the words while overwhelmed.
+// It is assembled from fixed sentences plus the latest check-in's
+// explanation lines — nothing is generated. Nothing is sent: "Copy summary"
+// only puts the text on the student's own clipboard, to share or not.
+export function Support({ data, settings, go, calmMode = false }) {
   const risk = data.checkins[0]?.risk;
   const [status, setStatus] = useState({ text: '', tone: 'status' });
-  const explanation = risk ? explainPressure(risk, data.tasks) : [];
+  const explanation = risk ? explainPressure(risk, data.tasks, new Date(), { forSharing: true }) : [];
   const summary = risk ? [
     `Right now I'm experiencing ${risk.band.toLowerCase()} study pressure.`,
     '',
@@ -37,14 +42,18 @@ export function Support({ data, settings, go }) {
     <article className="support-card">
       <h2>A summary you control</h2>
       <p>Nuvora can create a short summary based on your check-ins and tasks. Nothing is sent automatically — you choose whether and how to share it.</p>
-      <p style={{ whiteSpace: 'pre-line' }}>{risk ? summary : 'Complete a check-in to prepare a short support summary.'}</p>
+      {/* In Calm Mode the full summary is folded away until asked for, so
+          the screen opens on one short explanation and one button. */}
+      {risk && calmMode
+        ? <details className="calm-summary"><summary>Show the summary</summary><p style={{ whiteSpace: 'pre-line' }}>{summary}</p></details>
+        : <p style={{ whiteSpace: 'pre-line' }}>{risk ? summary : 'Complete a check-in to prepare a short support summary.'}</p>}
       <button className="primary" disabled={!risk} onClick={copy}>Copy summary</button>
       <StatusMessage text={status.text} tone={status.tone} />
     </article>
 
     <div className="panel panel-blue" style={{ padding: 6 }}>
       <button onClick={() => go('settings')} style={{ width: '100%', padding: '14px 12px', border: 0, background: 'none', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, color: 'var(--ink)' }}>
-        Calm accessibility settings <span className="hint" style={{ color: 'var(--nuvora-purple-dark)' }}>›</span>
+        Settings <span className="hint" style={{ color: 'var(--nuvora-purple-dark)' }}>›</span>
       </button>
       <div style={{ height: 1, background: 'var(--nuvora-line-soft)' }} />
       {settings?.supportPersonName

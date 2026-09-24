@@ -2,15 +2,24 @@
 
 import { useState } from 'react';
 import { Leaf } from 'lucide-react';
-import { completeCurrentStep, recordStepCompleted, recordStrategyUse, setCurrentStep } from '@/lib/store';
+import { completeCurrentStep, recordStepCompleted, recordStrategyUse, setCurrentStep, withStepCounted, withStrategyCounted } from '@/lib/store';
 import { pickPriorityTask } from '@/lib/recommendation';
-import { makeCustomStep } from '@/lib/steps';
+import { makeCustomStep, withStepDone } from '@/lib/steps';
 import { GENERIC_ERROR } from '@/components/constants';
 import { PageTitle } from '@/components/ui/PageTitle';
 import { StatusMessage } from '@/components/ui/StatusMessage';
 import { FocusTimer } from '@/components/ui/FocusTimer';
 import { ExternalLink } from '@/components/ui/ExternalLink';
 
+// Learn offers practical strategies for common study barriers (can't
+// start, too big, low energy, overstimulated, needing company). The student
+// picks the problem that feels closest and sees one matching tool, rather
+// than a long article. All wording is fixed; tools that change the plan
+// (such as "Use step 1 as my next step" or "I did the current step") only
+// ever replace or complete the current micro-step of the priority task,
+// never the whole assignment. The parking lot, if-then plan and
+// sensory choices are kept in memory for this visit only and are never
+// saved. External resources open outside the app and are clearly optional.
 export function Learn({ calmMode, data, uid, setData, go }) {
   const [showMoreTools, setShowMoreTools] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -60,9 +69,9 @@ export function Learn({ calmMode, data, uid, setData, go }) {
     setBusy(true);
     setLowEnergyStatus({ text: '', tone: 'status' });
     try {
-      const updated = await completeCurrentStep(uid, task.id, true);
-      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
-      await recordStepCompleted(uid).catch(() => {});
+      await completeCurrentStep(uid, task.id, true);
+      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? withStepDone(t) : t)) }));
+      await recordStepCompleted(uid).then(() => setData(d => ({ ...d, stats: withStepCounted(d.stats) })), () => {});
       setLowEnergyStatus({ text: 'Saved. That step is done — the assignment stays open.', tone: 'status' });
     } catch {
       setLowEnergyStatus({ text: GENERIC_ERROR, tone: 'error' });
@@ -78,7 +87,7 @@ export function Learn({ calmMode, data, uid, setData, go }) {
     setSupportStatus({ text: '', tone: 'status' });
     try {
       await navigator.clipboard.writeText(message);
-      await recordStrategyUse(uid, 'support').catch(() => {});
+      await recordStrategyUse(uid, 'support').then(() => setData(d => ({ ...d, stats: withStrategyCounted(d.stats, 'support') })), () => {});
       setSupportStatus({ text: 'Copied. Nothing is sent automatically.', tone: 'status' });
     } catch {
       setSupportStatus({ text: 'Could not copy automatically. You can copy the message manually instead.', tone: 'error' });

@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { completeCurrentStep, recordStrategyUse, setCurrentStep } from '@/lib/store';
+import { completeCurrentStep, recordStrategyUse, setCurrentStep, withStrategyCounted } from '@/lib/store';
 import { pickPriorityTask } from '@/lib/recommendation';
-import { suggestAlternativeSteps } from '@/lib/steps';
+import { suggestAlternativeSteps, withStep, withStepDone } from '@/lib/steps';
 import { orderByUsage } from '@/lib/patterns';
 import { GENERIC_ERROR } from '@/components/constants';
 import { Mascot } from '@/components/ui/Mascot';
@@ -20,6 +20,22 @@ const BARRIERS = [
 ];
 const QUICK_RESET = { title: 'A 2-minute breathing reset', text: 'Slow your breathing for two minutes — in for four counts, out for six. There is nothing else to do right now.' };
 
+// Overwhelmed Mode: instead of more information, the student names what is
+// getting in the way, and Nuvora offers one matching, smaller action for
+// the same priority task Today recommends (pickPriorityTask):
+//   • "Where to start"   → just open the task; saving marks its current
+//                           micro-step done.
+//   • "Too big"          → pick one of three fixed smaller steps; saving
+//                           makes it the current step, already done.
+//   • "Low energy"       → an optional two-minute timer; saving marks the
+//                           current micro-step done.
+//   • "Short reset"      → a breathing prompt; no task change.
+//   • "Ask for help"     → an editable message the student copies
+//                           themselves; Nuvora never sends anything.
+// None of these ever marks the whole assignment as done. Each use is
+// counted (a simple number per strategy, shown on Progress) so the options
+// the student has used most move to the top next time. If there are no
+// open tasks, the actions still finish calmly without saving anything.
 export function Overwhelmed({ data, uid, setData, go, settings }) {
   const [barrier, setBarrier] = useState(null);
   const [done, setDone] = useState(false);
@@ -47,14 +63,23 @@ export function Overwhelmed({ data, uid, setData, go, settings }) {
     }
   }, [barrier, task, settings]);
 
-  async function markDone(action) {
-    if (busy || !task) { setDone(true); return; }
+  // Counts a strategy as used, in storage and in the copy Progress reads.
+  // Secondary to the student's own action, so a failure is not surfaced.
+  function countStrategy(id) {
+    return recordStrategyUse(uid, id).then(() => setData(d => ({ ...d, stats: withStrategyCounted(d.stats, id) })), () => {});
+  }
+
+  // `patch` applies the saved change to local state; the store's return
+  // value is not used because it is empty in Firestore mode.
+  async function markDone(persist, patch) {
+    if (busy) return;
+    if (!task) { setDone(true); return; }
     setBusy(true);
     setError('');
     try {
-      const updated = await action();
-      if (updated) setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? updated : t)) }));
-      if (barrier) await recordStrategyUse(uid, barrier).catch(() => {});
+      await persist();
+      setData(d => ({ ...d, tasks: d.tasks.map(t => (t.id === task.id ? patch(t) : t)) }));
+      if (barrier) await countStrategy(barrier);
       setDone(true);
     } catch {
       setError(GENERIC_ERROR);
@@ -64,7 +89,7 @@ export function Overwhelmed({ data, uid, setData, go, settings }) {
   }
 
   async function continueAfterReset() {
-    await recordStrategyUse(uid, 'reset').catch(() => {});
+    await countStrategy('reset');
     go('today');
   }
 
@@ -72,7 +97,7 @@ export function Overwhelmed({ data, uid, setData, go, settings }) {
     setCopyStatus({ text: '', tone: 'status' });
     try {
       await navigator.clipboard.writeText(supportMessage);
-      await recordStrategyUse(uid, 'support').catch(() => {});
+      await countStrategy('support');
       setCopyStatus({ text: 'Copied. Nothing is sent automatically.', tone: 'status' });
     } catch {
       setCopyStatus({ text: "We couldn't copy that automatically — you can select and copy the text above.", tone: 'error' });
@@ -98,7 +123,7 @@ export function Overwhelmed({ data, uid, setData, go, settings }) {
 
     {barrier === 'start' && <article><small>ONE SMALL ACTION</small>
       <h2>{task ? `Just open "${task.title}". Nothing else needed.` : 'Just open the relevant file or page.'}</h2>
-      <button className="primary" disabled={busy} onClick={() => markDone(() => completeCurrentStep(uid, task.id, true))}>{busy ? 'Saving…' : 'I opened it'}</button>
+      <button className="primary" disabled={busy} onClick={() => markDone(() => completeCurrentStep(uid, task.id, true), withStepDone)}>{busy ? 'Saving…' : 'I opened it'}</button>
     </article>}
 
     {barrier === 'big' && <article><small>CHOOSE ONE PART</small>
@@ -106,14 +131,14 @@ export function Overwhelmed({ data, uid, setData, go, settings }) {
         <button key={alt.id} className="option" onClick={() => setChosenAlt(alt)}>{alt.text}</button>
       )) : <p>Pick one small section or question to focus on.</p>) : <>
         <p>{chosenAlt.text}</p>
-        <button className="primary" disabled={busy} onClick={() => markDone(() => setCurrentStep(uid, task.id, { ...chosenAlt, done: true, completedAt: new Date().toISOString() }))}>{busy ? 'Saving…' : 'I did this'}</button>
+        <button className="primary" disabled={busy} onClick={() => { const step = { ...chosenAlt, done: true, completedAt: new Date().toISOString() }; markDone(() => setCurrentStep(uid, task.id, step), t => withStep(t, step)); }}>{busy ? 'Saving…' : 'I did this'}</button>
       </>}
     </article>}
 
     {barrier === 'energy' && <article><small>JUST TWO MINUTES</small>
       <h2>You have permission to stop the moment this ends.</h2>
       <FocusTimer seconds={120} />
-      <button className="primary" disabled={busy} onClick={() => markDone(() => task && completeCurrentStep(uid, task.id, true))}>{busy ? 'Saving…' : 'I tried for two minutes'}</button>
+      <button className="primary" disabled={busy} onClick={() => markDone(() => completeCurrentStep(uid, task.id, true), withStepDone)}>{busy ? 'Saving…' : 'I tried for two minutes'}</button>
     </article>}
 
     {barrier === 'reset' && <article><small>ONE BRIEF RESET</small>

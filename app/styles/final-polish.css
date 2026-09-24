@@ -1,0 +1,214 @@
+/* Final polish layer — small, targeted fixes found while reviewing every
+   screen at phone width. Imported last. No new colours: everything here
+   reuses the existing tokens and the add-task sheet's secondary button. */
+
+/* ---------- Secondary buttons ----------
+   Plain <button>s with no class (Edit, Try a different step, Cancel, timer
+   Pause/Reset, Park it, Back to Today…) had no base style and rendered as
+   grey browser-default boxes. Only class-less buttons are matched, so
+   options, tabs, scales and every other classed button keep their own
+   styles; :where() keeps the specificity low as well. The Learn sprint
+   lengths (class "" / "selected") are styled explicitly below. */
+.content :where(button:not([class])),
+.content .row[role="group"] > button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(41, 39, 51, .10);
+  background: #f6f2ee;
+  color: var(--ink);
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.content :where(button:not([class])):disabled { opacity: .55; cursor: default; }
+.content :where(button:not([class])) svg { width: 18px; height: 18px; }
+.content .row[role="group"] > button.selected {
+  background: var(--nuvora-lavender);
+  border-color: var(--nuvora-purple);
+  color: var(--nuvora-purple-dark);
+}
+
+/* Today's focused step: the main action on its own full-width line, the
+   two secondary choices side by side underneath — instead of three
+   different-sized buttons squeezed into one row. */
+.task.focus .row { flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.task.focus .row > .primary { flex: 1 1 100%; margin-top: 0; }
+.task.focus .row > button:not(.primary) { flex: 1 1 0; }
+.task.focus .panel .row > button { flex: 1 1 0; }
+.task.focus .step-complete-badge { flex: 1 1 100%; }
+
+/* "Update workload pressure" had no styles at all. */
+.risk-update {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(41, 39, 51, .10);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .75);
+  color: var(--ink);
+  text-align: left;
+}
+.risk-update svg { width: 18px; height: 18px; flex: none; color: var(--nuvora-purple-dark); }
+.risk-update span { display: flex; flex-direction: column; }
+.risk-update small { color: var(--muted); font-weight: 600; }
+
+/* Timer controls: equal-width, spaced, not a big pill beside a tiny box. */
+.focus-timer .row { gap: 8px; }
+.focus-timer .row > button { flex: 1 1 0; margin-top: 0; }
+
+/* Learn: parking-lot input sits beside its button without overflowing. */
+.content .row > input { flex: 1; min-width: 0; }
+.content .row[role="group"] { flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
+
+/* ---------- Progress ---------- */
+/* Strategy names wrapped into a 70px column meant for dates. */
+.trend.strategy-row { grid-template-columns: 1fr auto; font-size: .85em; margin: 10px 0; }
+/* Pressure rows had ~70px each (44px tap target plus the row's own
+   margins); the tap target alone is enough. */
+.trend-entry > summary.trend { margin: 0; }
+
+/* ---------- Overwhelmed Mode ---------- */
+/* The mascot was the only left-aligned item on a centred page. */
+.overwhelmed-page > .mascot { margin: 0 auto 6px; }
+
+/* ---------- Phones, notches and home indicators ----------
+   100vh is taller than the visible area in mobile browsers (it ignores the
+   toolbar), which pushed the bottom nav partly out of view; dvh tracks the
+   visible height. env(safe-area-inset-*) is 0 on devices without a notch
+   or home indicator and on desktop, so the framed desktop view is unchanged.
+   Requires viewport-fit=cover (set in app/layout.js). */
+header {
+  height: calc(72px + env(safe-area-inset-top, 0px));
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+}
+nav {
+  height: calc(74px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.content { padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+.sheet { padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
+.auth-phone {
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 500px) {
+  .phone { height: 100vh; height: 100dvh; }
+  .content { padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ---------- Narrow phones and larger text ---------- */
+/* "Calm on" wrapped onto two lines and was clipped by the header. */
+.calm-toggle { white-space: nowrap; flex: none; }
+/* Tabs (Today/Week/Later, text size) could push the last one outside
+   the track once the text was large. */
+.tabs button { min-width: 0; }
+/* Result screens: the mascot was left-aligned under centred text. */
+.result > .mascot { margin: 0 auto 8px; }
+/* Task edit/delete were 38px — below the 44px touch target used elsewhere. */
+.row-task .icon { width: 44px; height: 44px; }
+
+@media (max-width: 380px) {
+  header { padding-left: 14px; padding-right: 14px; }
+  .calm-toggle { padding: 8px 10px; }
+  .tabs button { padding-left: 4px; padding-right: 4px; }
+  /* Stack edit and delete in one column so the task title keeps most of
+     the width instead of wrapping one word per line. */
+  .row-task { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 10px; align-items: start; }
+  .row-task > .check, .row-task > div { grid-row: span 2; }
+  .row-task > .icon { grid-column: 3; }
+}
+
+/* Sign-in / sign-up: on shorter phones the fixed-height column squeezed
+   the welcome card (flex-shrink) until its heading was clipped — 32px tall
+   at 320×640. The column already scrolls, so let it scroll instead. */
+.auth-phone > * { flex-shrink: 0; }
+
+/* Progress: "Weekly reflection" used the pink Overwhelmed button style,
+   which signals distress rather than an optional, reflective activity.
+   Same shape, in the Progress page's own teal. */
+.reflection-link {
+  width: 100%;
+  min-height: 48px;
+  margin: 16px 0 4px;
+  padding: 13px;
+  border: 1px solid rgba(78, 158, 147, .22);
+  border-radius: var(--radius-pill);
+  background: var(--nuvora-teal-soft);
+  color: var(--nuvora-teal-text);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.reflection-link svg { width: 18px; height: 18px; }
+
+/* ---------- Calm Mode on every screen ----------
+   Calm Mode used to change only Today (and hide details on Tasks). Its
+   softer background never showed — later layers paint .phone and header
+   with --nuvora-bg directly — and the "Reduce visual detail" class it adds
+   (calm-low-detail) had no styles. These rules apply both across every
+   screen, using the existing Calm palette token, no new colours. */
+main.calm .phone,
+main.calm header,
+main.calm .sheet { background-color: var(--nuvora-bg-soft); }
+main.calm header { border-bottom-color: transparent; }
+/* Flatter, quieter cards: no drop shadows or decorative bubbles. */
+main.calm .page-title-card,
+main.calm .risk,
+main.calm .stats article,
+main.calm .row-task,
+main.calm .notice { box-shadow: none; }
+main.calm .page-title-card::before,
+main.calm .page-title-card::after { display: none; }
+main.calm .page-title-card { min-height: 0; }
+
+/* "Reduce visual detail" (a Calm-session preference, on by default): hide
+   the decorative mascot illustrations on every screen. Functional icons,
+   buttons and text are untouched. */
+.calm-low-detail .page-title-cloud,
+.calm-low-detail .welcome-cloud,
+.calm-low-detail .calm-hero-cloud,
+.calm-low-detail .calm-footer-cloud,
+.calm-low-detail .content .mascot { display: none; }
+
+/* Support in Calm Mode: the summary sits behind one clear disclosure. */
+.calm-summary > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--nuvora-purple-dark);
+  list-style: revert;
+}
+/* Without its cloud, the Calm hero's text takes the full width. */
+.calm-low-detail .calm-hero { grid-template-columns: 1fr; }
+
+/* Header: the Calm pill and, while Calm Mode is on, the calming-sound
+   button sit together on the right, so the logo stays centred. */
+.header-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.sound-toggle { color: var(--nuvora-teal-text); }
+.sound-toggle[aria-pressed="true"] { background: var(--nuvora-teal-soft); }
+@media (max-width: 380px) {
+  /* Room for both buttons on narrow phones: in Calm Mode the header keeps
+     the cloud logo but drops the "Nuvora" word. */
+  main.calm header .logo-name { display: none; }
+}
+
+/* Calm hero ("CALM SPACE / Calm Mode is on. / Nuvora is keeping things
+   simple for now."): the heading was forced left while the other two lines
+   inherited centring, so the three lines disagreed. Now they always match:
+   left-aligned beside the cloud, centred when the cloud is hidden. */
+.calm-hero-copy,
+.calm-hero .calm-heading { text-align: left; }
+.calm-low-detail .calm-hero-copy,
+.calm-low-detail .calm-hero .calm-heading { text-align: center; }

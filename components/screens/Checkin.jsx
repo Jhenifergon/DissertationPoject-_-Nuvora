@@ -22,7 +22,19 @@ const questions = [
   { id: 'confidence', title: 'How confident do you feel about this week?', max: 5, low: 'Not confident', high: 'Confident' },
 ];
 
-export function Checkin({ uid, data, setData, go, draft, setDraft }) {
+// The daily check-in: five short questions, one per screen, so there is
+// only one decision to make at a time. Every question offers "Not sure /
+// prefer not to answer", and the student can leave at any point ("Exit for
+// now") without losing answers, because the draft is held by NuvoraApp.
+//
+// Data flow on the last question: answers → calculatePressure (lib/risk.js)
+// → combineWorkloadPressure adds current deadlines (lib/pressure.js) →
+// saved with saveCheckin → added to the shared state → result screen.
+// The result is only shown after the save succeeds, so the student is
+// never told a check-in was recorded when it was not.
+// `hideNumbers` is true while Calm Mode's "Hide progress numbers" is on:
+// the result then shows the band and its explanation but not the score.
+export function Checkin({ uid, data, setData, go, draft, setDraft, hideNumbers = false }) {
   const [risk, setRisk] = useState(null);
   const [incomplete, setIncomplete] = useState(false);
   const [error, setError] = useState('');
@@ -72,10 +84,11 @@ export function Checkin({ uid, data, setData, go, draft, setDraft }) {
     setSubmitting(true);
     setError('');
     try {
-      // Calculate the transparent rule-based pressure score locally rather
-      // than making an unnecessary request to /api/risk. This keeps the
-      // core scoring path available for offline/PWA/Capacitor use and avoids
-      // introducing a network failure point for a pure deterministic function.
+      // The transparent rule-based score is calculated on the device (the
+      // static build has no server API). The answers therefore never leave
+      // the device just to be scored, scoring still works offline and in the
+      // Android/iOS apps, and a pure deterministic function has no network
+      // failure point.
       const r = calculatePressure(answers);
 
       // The self-report score (r) is combined with the student's current
@@ -99,7 +112,7 @@ export function Checkin({ uid, data, setData, go, draft, setDraft }) {
 
   if (incomplete) return <div className="result">
     <Mascot size={64} mood="neutral" /><h1 ref={resultHeadingRef} tabIndex={-1}>That’s okay.</h1>
-    <p>We don’t have enough information from today’s answers to calculate a workload-pressure band. Your answers have been saved. Here’s one small step anyway.</p>
+    <p>Some answers were “Not sure”, so Nuvora hasn’t worked out a workload-pressure band today. Your answers are saved, and your next small step is still on Today.</p>
     <button className="primary" onClick={() => { resetDraft(); go('today'); }}>Back to Today</button>
   </div>;
 
@@ -110,7 +123,9 @@ export function Checkin({ uid, data, setData, go, draft, setDraft }) {
       <h1 ref={resultHeadingRef} tabIndex={-1}>{risk.band} pressure</h1>
       <p>{risk.message}</p>
       <p>This result is not a diagnosis. It only helps Nuvora adjust today’s support.</p>
-      <details><summary>Why this result?</summary><p className="hint">Pressure estimate: {risk.score}/100 — a supportive estimate, not a diagnosis.</p><ul className="explanation-list">{explainPressure(risk, data.tasks).map((line, i) => <li key={i}>{line}</li>)}</ul></details>
+      <details><summary>Why this result?</summary>{!hideNumbers && <p className="hint">Pressure estimate: {risk.score}/100 — a supportive estimate, not a diagnosis.</p>}<ul className="explanation-list">{explainPressure(risk, data.tasks).map((line, i) => <li key={i}>{line}</li>)}</ul></details>
+      {/* A Higher band goes straight to Overwhelmed Mode's smaller choices;
+          otherwise back to Today's single next step. */}
       <button className="primary" onClick={() => { resetDraft(); go(risk.band === 'Higher' ? 'overwhelmed' : 'today'); }}>Choose my next step</button>
     </div>
   </>;

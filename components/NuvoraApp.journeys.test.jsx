@@ -162,6 +162,38 @@ describe('end-to-end journeys', () => {
     await screen.findByText('Persists across reload');
   });
 
+  it('weekly reflection: save -> navigate away -> return -> reload keeps it visible, newest first', async () => {
+    // Five older entries already stored, so the new one must land on top
+    // of a full "recent" list rather than being cut off by the limit.
+    const older = [1, 2, 3, 4, 5].map(n => ({ id: `old-${n}`, manageable: `Older entry ${n}`, createdAt: new Date(Date.now() - n * 86400000).toISOString() }));
+    localStorage.setItem('nuvora-demo-data-v1', JSON.stringify({ tasks: [], checkins: [], reflections: older, settings: {}, stats: {} }));
+    const openReflection = async () => {
+      await screen.findByText('How are things feeling, there?');
+      fireEvent.click(within(document.querySelector('nav')).getByRole('button', { name: 'Progress' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Weekly reflection' }));
+      await screen.findByText('Past reflections');
+    };
+    const firstEntry = () => document.querySelector('article.panel').textContent;
+
+    const { unmount } = render(<NuvoraApp />);
+    await openReflection();
+    fireEvent.change(screen.getByLabelText('What felt manageable this week?'), { target: { value: 'Local mode entry' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save reflection' }));
+    await screen.findByText('Saved. Thank you for taking a moment for this.');
+    expect(firstEntry()).toContain('Local mode entry');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Weekly reflection' }));
+    expect(firstEntry()).toContain('Local mode entry');
+
+    unmount();
+    render(<NuvoraApp />);
+    await openReflection();
+    expect(firstEntry()).toContain('Local mode entry');
+    fireEvent.click(screen.getByRole('button', { name: 'Show older reflections (1)' }));
+    expect(screen.getByText(/Older entry 5/)).toBeInTheDocument();
+  });
+
   it('journey 10: delete the user\'s data', async () => {
     render(<NuvoraApp />);
     await screen.findByText('How are things feeling, there?');
@@ -180,8 +212,7 @@ describe('end-to-end journeys', () => {
     fireEvent.click(screen.getByRole('button', { name: /Delete all my data/ }));
     await screen.findByText('All your Nuvora data has been deleted.');
 
-    fireEvent.click(screen.getByRole('button', { name: /Today/ }));
-    await screen.findByText('How are things feeling, there?');
+    // Privacy was opened from Tasks, so its back button returns there.
     fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
     await screen.findByText('My plan');
     expect(screen.queryByText('To be deleted')).not.toBeInTheDocument();

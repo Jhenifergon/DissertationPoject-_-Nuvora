@@ -84,11 +84,11 @@ export function Auth() {
 
       <div className="auth-card">
         <form onSubmit={submitReset}>
-          <label>Email<input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required /></label>
+          <label>Email<input type="email" autoComplete="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required /></label>
           <StatusMessage text={resetStatus.text} tone={resetStatus.tone} />
           <button className="primary" disabled={busy}>{busy ? 'Sending…' : 'Send reset email'}</button>
         </form>
-        <button className="link auth-back-link" onClick={() => setMode('login')}>Back to log in</button>
+        <button className="link auth-back-link" onClick={() => { setResetStatus({ text: '', tone: 'status' }); setMode('login'); }}>Back to log in</button>
       </div>
     </section></main>;
   }
@@ -111,14 +111,15 @@ export function Auth() {
 
     <div className="auth-card">
       <div className="tabs auth-tabs" aria-label="Account options">
-        <button type="button" onClick={() => setMode('login')} className={mode === 'login' ? 'active' : ''}>Log in</button>
-        <button type="button" onClick={() => setMode('signup')} className={mode === 'signup' ? 'active' : ''}>Sign up</button>
+        <button type="button" aria-pressed={mode === 'login'} onClick={() => { setError(''); setMode('login'); }} className={mode === 'login' ? 'active' : ''}>Log in</button>
+        <button type="button" aria-pressed={mode === 'signup'} onClick={() => { setError(''); setMode('signup'); }} className={mode === 'signup' ? 'active' : ''}>Sign up</button>
       </div>
 
       <form onSubmit={submit}>
-        <label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-        <label>Password<input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} required /></label>
-        {mode === 'signup' && <label>What should Nuvora call you? (optional)<input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="You can skip this" /></label>}
+        <label>Email<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
+        <label>Password<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength="6" aria-describedby={mode === 'signup' ? 'password-hint' : undefined} value={password} onChange={e => setPassword(e.target.value)} required /></label>
+        {mode === 'signup' && <p className="hint" id="password-hint" style={{ margin: '-4px 0 4px' }}>At least 6 characters.</p>}
+        {mode === 'signup' && <label>What should Nuvora call you? (optional)<input type="text" autoComplete="nickname" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="You can skip this" /></label>}
         {mode === 'login' && <button type="button" className="link auth-forgot-link" onClick={() => { setResetEmail(email); setMode('reset'); }}>Forgot password?</button>}
         <StatusMessage text={error} tone="error" />
         <button className="primary auth-submit" disabled={busy}>{busy ? 'Please wait…' : (mode === 'login' ? 'Log in' : 'Create account')}</button>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { TrendingUp } from 'lucide-react';
+import { PenLine, TrendingUp } from 'lucide-react';
 import { buildPatternInsights } from '@/lib/patterns';
 import { explainPressure } from '@/lib/explain';
 import { CALM_SESSION_DEFAULTS } from '@/components/constants';
@@ -10,6 +10,13 @@ import { Empty } from '@/components/ui/Empty';
 
 const STRATEGY_LABELS = { start: 'Getting started', big: 'Breaking a task down', energy: 'Low-energy attempts', reset: 'Short resets', support: 'Asking for help' };
 
+// Progress is designed to be reflective, not motivational pressure: there
+// are no streaks, targets, grades or "missed day" counts, only neutral
+// totals (check-ins, small steps taken, strategies used), recent pressure
+// results with their explanations, and pattern lines that only appear when
+// there is enough data to support them (lib/patterns.js). The student can
+// hide the whole section ("Hide these details"), and Calm Mode can hide the
+// numbers for the current session. Weekly reflections are reached from here.
 export function Progress({ data, settings, updateSettings, settingsBusy, go, calmSession = CALM_SESSION_DEFAULTS }) {
   const totalStrategyUses = Object.values(data.stats.strategyUses).reduce((a, b) => a + b, 0);
   const usedStrategies = Object.entries(data.stats.strategyUses).filter(([, n]) => n > 0);
@@ -33,7 +40,7 @@ export function Progress({ data, settings, updateSettings, settingsBusy, go, cal
     </div>}
     {usedStrategies.length > 0 && <div className="panel panel-lavender">
       <h2>Helpful strategies</h2>
-      {usedStrategies.map(([id, n]) => <div className="trend" key={id}><span>{STRATEGY_LABELS[id]}</span><span /><b>{showProgressNumbers ? n : 'Used'}</b></div>)}
+      {usedStrategies.map(([id, n]) => <div className="trend strategy-row" key={id}><span>{STRATEGY_LABELS[id]}</span><b>{showProgressNumbers ? n : 'Used'}</b></div>)}
     </div>}
     <h2>Recent pressure patterns</h2>
     {data.checkins.slice(0, 7).map((c, i) => {
@@ -63,7 +70,7 @@ export function Progress({ data, settings, updateSettings, settingsBusy, go, cal
     {settings.calmMode && !showTrends
       ? <button className="link" onClick={() => setShowTrends(true)}>Show trends &amp; strategies</button>
       : trendsAndStrategies}
-    <button className="overwhelmed" onClick={() => go('reflection')}>Weekly reflection</button>
+    <button className="reflection-link" onClick={() => go('reflection')}><PenLine aria-hidden="true" /> Weekly reflection</button>
     <button className="link" disabled={settingsBusy} onClick={() => updateSettings({ ...settings, hideProgress: true })}>Hide these details</button>
   </>;
 }

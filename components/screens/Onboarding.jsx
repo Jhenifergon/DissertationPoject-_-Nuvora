@@ -20,6 +20,7 @@ export function Onboarding({ onDone }) {
     <Mascot size={90} />
     <h1>{screen.title}</h1>
     <p>{screen.text}</p>
+    <p className="sr-only">Step {step + 1} of {ONBOARDING_SCREENS.length}</p>
     <div className="row" style={{ justifyContent: 'center', gap: 6, margin: '10px 0 18px' }} aria-hidden="true">
       {ONBOARDING_SCREENS.map((_, i) => <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: i === step ? 'var(--purple)' : 'var(--purple-soft)' }} />)}
     </div>
