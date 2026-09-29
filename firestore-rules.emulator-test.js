@@ -73,13 +73,20 @@ describe('firestore.rules — users/{userId} document', () => {
   });
 });
 
+// Mirrors the full task document components/screens/Tasks.jsx writes.
+const task = (overrides = {}) => ({
+  title: 'x', module: 'Other', due: '', priority: 'normal', bucket: 'today', done: false,
+  currentStep: { id: 's1', text: 'Open the document.', done: false, completedAt: null },
+  ...overrides,
+});
+
 describe('firestore.rules — nested subcollections (tasks, checkins, reflections)', () => {
   // reflections have no schema requirement, so a generic document is fine
   // there; tasks and checkins need a minimally valid shape or the new
   // schema validation (see below) would reject the setup write itself.
   const validDoc = {
-    tasks: { title: 'Example task', done: false },
-    checkins: { answers: {}, risk: { score: 40, band: 'Moderate' } },
+    tasks: task({ title: 'Example task' }),
+    checkins: { answers: {}, risk: { score: 40, band: 'Moderate', factors: {} } },
     reflections: { example: true },
   };
 
@@ -113,40 +120,56 @@ describe('firestore.rules — nested subcollections (tasks, checkins, reflection
 describe('firestore.rules — task schema validation', () => {
   it('accepts a valid task', async () => {
     const db = dbAs('alice');
-    await assertSucceeds(db.collection('users').doc('alice').collection('tasks').doc('t1').set({
-      title: 'Read chapter 2', done: false, priority: 'high', module: 'Dissertation', due: '2026-10-01',
-    }));
+    await assertSucceeds(db.collection('users').doc('alice').collection('tasks').doc('t1').set(task({
+      title: 'Read chapter 2', priority: 'high', module: 'Dissertation', due: '2026-10-01',
+    })));
   });
 
+  // Each rejection test starts from a VALID task and changes exactly one
+  // field, so the write can only fail because of the rule being tested.
+  // (Earlier versions wrote documents that were also missing required
+  // fields, so they would have failed even without the rule under test.)
   it('rejects a task with no title', async () => {
     const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ done: false }));
+    const { title, ...withoutTitle } = task();
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set(withoutTitle));
   });
 
   it('rejects a task whose title is not a string', async () => {
     const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 12345, done: false }));
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set(task({ title: 12345 })));
+  });
+
+  it('rejects a task title longer than 200 characters', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set(task({ title: 'a'.repeat(201) })));
   });
 
   it('rejects a task whose done field is not a boolean', async () => {
     const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 'x', done: 'yes' }));
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set(task({ done: 'yes' })));
   });
 
   it('rejects a task with a priority outside the allowed enum', async () => {
     const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 'x', done: false, priority: 'urgent!!' }));
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set(task({ priority: 'urgent!!' })));
+  });
+
+  it('rejects a task with a bucket outside today/week/later', async () => {
+    const db = dbAs('alice');
+    await assertFails(db.collection('users').doc('alice').collection('tasks').doc('t1').set(task({ bucket: 'someday' })));
   });
 
   it('accepts a task with no priority field at all (it is optional)', async () => {
     const db = dbAs('alice');
-    await assertSucceeds(db.collection('users').doc('alice').collection('tasks').doc('t1').set({ title: 'x', done: false }));
+    const { priority, ...withoutPriority } = task();
+    await assertSucceeds(db.collection('users').doc('alice').collection('tasks').doc('t1').set(withoutPriority));
   });
 
   it('a partial update (matching lib/store.js updateTask) is validated against the resulting merged document', async () => {
     const db = dbAs('alice');
     const ref = db.collection('users').doc('alice').collection('tasks').doc('t1');
-    await ref.set({ title: 'Original', done: false, priority: 'normal' });
+    await ref.set(task({ title: 'Original' }));
     // Only changing the title — done/priority are untouched by this write,
     // but rules still see (and must accept) the full resulting document.
     await assertSucceeds(ref.update({ title: 'Edited title' }));
@@ -158,7 +181,7 @@ describe('firestore.rules — check-in schema validation', () => {
     const db = dbAs('alice');
     await assertSucceeds(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
       answers: { mood: 2, sleep: 3, focus: 3, initiation: 3, confidence: 3 },
-      risk: { score: 45, band: 'Moderate', message: 'x' },
+      risk: { score: 45, band: 'Moderate', message: 'x', factors: {} },
     }));
   });
 
@@ -169,32 +192,137 @@ describe('firestore.rules — check-in schema validation', () => {
     }));
   });
 
-  it('rejects a score above 100', async () => {
-    const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
-      risk: { score: 150, band: 'Higher' },
-    }));
+  // As with tasks: each rejection starts from a VALID check-in (answers
+  // present, factors present) and changes one thing in `risk`, so a
+  // failure can only come from the score/band rule itself.
+  const checkin = (risk = {}) => ({
+    answers: { mood: 2, sleep: 3, focus: 3, initiation: 3, confidence: 3 },
+    risk: { score: 45, band: 'Moderate', message: 'x', factors: {}, ...risk },
+  });
+  const checkinRef = db => db.collection('users').doc('alice').collection('checkins').doc('c1');
+
+  it('accepts the maximum score of exactly 100', async () => {
+    await assertSucceeds(checkinRef(dbAs('alice')).set(checkin({ score: 100, band: 'Higher' })));
+  });
+
+  it('rejects a score above 100 (101)', async () => {
+    await assertFails(checkinRef(dbAs('alice')).set(checkin({ score: 101, band: 'Higher' })));
+  });
+
+  it('accepts the minimum score of exactly 0', async () => {
+    await assertSucceeds(checkinRef(dbAs('alice')).set(checkin({ score: 0, band: 'Low' })));
   });
 
   it('rejects a negative score', async () => {
-    const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
-      risk: { score: -5, band: 'Low' },
-    }));
+    await assertFails(checkinRef(dbAs('alice')).set(checkin({ score: -5, band: 'Low' })));
   });
 
   it('rejects a band outside Low/Moderate/Higher', async () => {
-    const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
-      risk: { score: 50, band: 'Severe' },
-    }));
+    await assertFails(checkinRef(dbAs('alice')).set(checkin({ score: 50, band: 'Severe' })));
   });
 
   it('rejects a non-numeric score', async () => {
+    await assertFails(checkinRef(dbAs('alice')).set(checkin({ score: 'high', band: 'Higher' })));
+  });
+
+  it('rejects a scored check-in with no factors', async () => {
+    const { factors, ...riskWithoutFactors } = checkin().risk;
+    await assertFails(checkinRef(dbAs('alice')).set({ ...checkin(), risk: riskWithoutFactors }));
+  });
+
+  it('rejects a check-in with no answers', async () => {
+    const { answers, ...withoutAnswers } = checkin();
+    await assertFails(checkinRef(dbAs('alice')).set(withoutAnswers));
+  });
+});
+
+describe('firestore.rules — users/{uid} settings and stats validation', () => {
+  const userRef = db => db.collection('users').doc('alice');
+  // The exact shape lib/store.js saveSettings() writes (defaultSettings,
+  // sanitised), here with a restart point saved by "Stop for now".
+  const settings = (overrides = {}) => ({
+    calmMode: false, calmTone: true, reducedMotion: false, textScale: 1,
+    displayName: 'Sam', hideProgress: false, supportPersonName: '', supportPersonNote: '',
+    restartMemory: { taskId: 't1', taskTitle: 'Essay', stepText: 'Write the title.', stoppedAt: '2026-09-29T10:00:00.000Z' },
+    ...overrides,
+  });
+
+  it('accepts the full settings object the app saves', async () => {
+    await assertSucceeds(userRef(dbAs('alice')).set({ settings: settings() }, { merge: true }));
+  });
+
+  it('accepts settings with no restart point (restartMemory null)', async () => {
+    await assertSucceeds(userRef(dbAs('alice')).set({ settings: settings({ restartMemory: null }) }, { merge: true }));
+  });
+
+  it('rejects a setting with the wrong type', async () => {
+    await assertFails(userRef(dbAs('alice')).set({ settings: settings({ calmMode: 'yes' }) }, { merge: true }));
+  });
+
+  it('rejects a text size outside 0.5–2', async () => {
+    await assertFails(userRef(dbAs('alice')).set({ settings: settings({ textScale: 50 }) }, { merge: true }));
+  });
+
+  it('rejects a display name longer than 100 characters', async () => {
+    await assertFails(userRef(dbAs('alice')).set({ settings: settings({ displayName: 'a'.repeat(101) }) }, { merge: true }));
+  });
+
+  it('rejects a restart point whose step text is longer than 500 characters', async () => {
+    const restartMemory = { ...settings().restartMemory, stepText: 'a'.repeat(501) };
+    await assertFails(userRef(dbAs('alice')).set({ settings: settings({ restartMemory }) }, { merge: true }));
+  });
+
+  it('rejects settings that are not a map', async () => {
+    await assertFails(userRef(dbAs('alice')).set({ settings: 'calm' }, { merge: true }));
+  });
+
+  it('accepts the stats increments recordStepCompleted / recordStrategyUse make', async () => {
     const db = dbAs('alice');
-    await assertFails(db.collection('users').doc('alice').collection('checkins').doc('c1').set({
-      risk: { score: 'high', band: 'Higher' },
-    }));
+    await assertSucceeds(userRef(db).set({ stats: { stepsCompleted: 1 } }, { merge: true }));
+    await assertSucceeds(userRef(db).set({ stats: { strategyUses: { big: 2 } } }, { merge: true }));
+  });
+
+  it('rejects stats with a non-numeric step count', async () => {
+    await assertFails(userRef(dbAs('alice')).set({ stats: { stepsCompleted: 'many' } }, { merge: true }));
+  });
+
+  it('still accepts a settings save on a document with extra seed-script metadata', async () => {
+    // scripts/seedProgressStats.mjs adds keys such as syntheticProgress
+    // next to stats. Because merge writes are checked against the whole
+    // resulting document, extra keys must not block later settings saves.
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await ctx.firestore().collection('users').doc('alice').set({
+        stats: { stepsCompleted: 3, strategyUses: { start: 1 } },
+        syntheticProgress: true, progressSeedSource: 'seed',
+      });
+    });
+    await assertSucceeds(userRef(dbAs('alice')).set({ settings: settings({ calmMode: true }) }, { merge: true }));
+  });
+
+  it('refuses the unused /settings and /stats sub-collections (default deny)', async () => {
+    const db = dbAs('alice');
+    await assertFails(userRef(db).collection('settings').doc('s1').set({ calmMode: true }));
+    await assertFails(userRef(db).collection('stats').doc('s1').set({ stepsCompleted: 1 }));
+  });
+});
+
+describe('firestore.rules — reflection size validation', () => {
+  const reflectionRef = db => db.collection('users').doc('alice').collection('reflections').doc('r1');
+
+  it('accepts a reflection in the shape the app saves', async () => {
+    await assertSucceeds(reflectionRef(dbAs('alice')).set({ manageable: 'Emailing my tutor.', hard: 'Starting earlier.', createdAt: new Date() }));
+  });
+
+  it('accepts a reflection in the shape the seed script saves', async () => {
+    await assertSucceeds(reflectionRef(dbAs('alice')).set({ text: 'A calmer week.', barrier: 'start', createdAt: new Date() }));
+  });
+
+  it('rejects a reflection answer longer than 2000 characters', async () => {
+    await assertFails(reflectionRef(dbAs('alice')).set({ manageable: 'a'.repeat(2001), hard: '' }));
+  });
+
+  it('rejects a reflection answer that is not text', async () => {
+    await assertFails(reflectionRef(dbAs('alice')).set({ manageable: 42 }));
   });
 });
 
@@ -202,13 +330,13 @@ describe('firestore.rules — deletion (matches lib/store.js delete* functions)'
   it('lets a signed-in user delete their own documents', async () => {
     const db = dbAs('alice');
     const ref = db.collection('users').doc('alice').collection('tasks').doc('t1');
-    await ref.set({ title: 'x', done: false });
+    await ref.set(task());
     await assertSucceeds(ref.delete());
   });
 
   it('blocks a signed-in user from deleting someone else\'s documents', async () => {
     const asBob = dbAs('bob');
-    await asBob.collection('users').doc('bob').collection('tasks').doc('t1').set({ title: 'x', done: false });
+    await asBob.collection('users').doc('bob').collection('tasks').doc('t1').set(task());
     const asAlice = dbAs('alice');
     await assertFails(asAlice.collection('users').doc('bob').collection('tasks').doc('t1').delete());
   });

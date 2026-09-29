@@ -25,7 +25,7 @@ export function SettingsPage({ value, busy, error, onChange, back }) {
     <label className="setting" style={{ display: 'block' }}>
       <b>What should Nuvora call you?</b>
       <p>Optional — used only for a friendly greeting. Leave blank if you&rsquo;d rather not.</p>
-      <input type="text" autoComplete="nickname" defaultValue={value.displayName} disabled={busy} placeholder="e.g. Sam" onBlur={e => saveText('displayName', e.target.value.trim())} style={inputStyle} />
+      <input type="text" autoComplete="nickname" maxLength={100} defaultValue={value.displayName} disabled={busy} placeholder="e.g. Sam" onBlur={e => saveText('displayName', e.target.value.trim())} style={inputStyle} />
     </label>
     <Setting label="Calm Mode" text="Shows one small step at a time on Today, and hides extra detail elsewhere." checked={value.calmMode} disabled={busy} onChange={v => onChange({ ...value, calmMode: v })} />
     <Setting label="Play calming sound when Calm Mode starts" text="A soft, continuous background tone while Calm Mode is on. Some people find a steady sound helps them settle. Stop it any time with the speaker button at the top." checked={value.calmTone !== false} disabled={busy} onChange={v => onChange({ ...value, calmTone: v })} />
@@ -36,11 +36,11 @@ export function SettingsPage({ value, busy, error, onChange, back }) {
     <p>Optional — a note for yourself. Nuvora never contacts anyone.</p>
     <label className="setting" style={{ display: 'block' }}>
       <b>Name</b>
-      <input type="text" defaultValue={value.supportPersonName} disabled={busy} placeholder="e.g. Course tutor, a friend" onBlur={e => saveText('supportPersonName', e.target.value.trim())} style={inputStyle} />
+      <input type="text" maxLength={100} defaultValue={value.supportPersonName} disabled={busy} placeholder="e.g. Course tutor, a friend" onBlur={e => saveText('supportPersonName', e.target.value.trim())} style={inputStyle} />
     </label>
     <label className="setting" style={{ display: 'block' }}>
       <b>Note (optional)</b>
-      <input type="text" defaultValue={value.supportPersonNote} disabled={busy} placeholder="e.g. Best reached by email" onBlur={e => saveText('supportPersonNote', e.target.value.trim())} style={inputStyle} />
+      <input type="text" maxLength={300} defaultValue={value.supportPersonNote} disabled={busy} placeholder="e.g. Best reached by email" onBlur={e => saveText('supportPersonNote', e.target.value.trim())} style={inputStyle} />
     </label>
     <StatusMessage text={error || saved} tone={error ? 'error' : 'status'} />
   </>;

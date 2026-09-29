@@ -31,12 +31,18 @@ service cloud.firestore {
         && data.due is string
         && data.due.size() <= 10
 
-        && data.priority is string
-        && data.priority in [
-          'low',
-          'normal',
-          'high'
-        ]
+        // Optional: older tasks predate priority (see migrateTask).
+        && (
+          !('priority' in data)
+          || (
+            data.priority is string
+            && data.priority in [
+              'low',
+              'normal',
+              'high'
+            ]
+          )
+        )
 
         && data.bucket is string
         && data.bucket in [
@@ -66,12 +72,16 @@ service cloud.firestore {
      */
     function validRisk(data) {
       return !('risk' in data)
+        || data.risk == null
         || (
           data.risk is map
 
+          // 100 is the real maximum: calculatePressure() stays within
+          // 0–100 and combineWorkloadPressure() caps the adjusted score
+          // with Math.min(100, …).
           && data.risk.score is number
           && data.risk.score >= 0
-          && data.risk.score <= 120
+          && data.risk.score <= 100
 
           && data.risk.band is string
           && data.risk.band in [
@@ -103,6 +113,78 @@ service cloud.firestore {
         && validRisk(data);
     }
 
+    /*
+     * True when `key` is absent from the map, or is a string of at most
+     * `max` characters. Used for optional free-text fields.
+     */
+    function optionalString(data, key, max) {
+      return !(key in data)
+        || (data[key] is string && data[key].size() <= max);
+    }
+
+    /*
+     * The users/{uid} document holds the student's settings and stats as
+     * fields (see lib/store.js saveSettings / recordStepCompleted).
+     *
+     * Only the fields the app relies on are type-checked. Other keys are
+     * deliberately allowed: settings and stats are written with
+     * { merge: true }, so these rules see the whole merged document, and
+     * the seed scripts add extra metadata keys (for example
+     * syntheticProgress) that must not make later settings saves fail.
+     * The limits match the maxLength of the matching inputs.
+     */
+    function validRestartMemory(m) {
+      return m == null
+        || (
+          m is map
+          && m.get('taskId', '') is string
+          && m.get('taskTitle', '') is string
+          && m.get('taskTitle', '').size() <= 200
+          && m.get('stepText', '') is string
+          && m.get('stepText', '').size() <= 500
+          && m.get('stoppedAt', '') is string
+        );
+    }
+
+    function validSettings(s) {
+      return s is map
+        && s.get('calmMode', false) is bool
+        && s.get('calmTone', true) is bool
+        && s.get('reducedMotion', false) is bool
+        && s.get('hideProgress', false) is bool
+        && s.get('textScale', 1) is number
+        && s.get('textScale', 1) >= 0.5
+        && s.get('textScale', 1) <= 2
+        && optionalString(s, 'displayName', 100)
+        && optionalString(s, 'supportPersonName', 100)
+        && optionalString(s, 'supportPersonNote', 300)
+        && validRestartMemory(s.get('restartMemory', null));
+    }
+
+    function validStats(st) {
+      return st is map
+        && st.get('stepsCompleted', 0) is number
+        && st.get('strategyUses', {}) is map;
+    }
+
+    function validUserDoc(data) {
+      return (!('settings' in data) || validSettings(data.settings))
+        && (!('stats' in data) || validStats(data.stats));
+    }
+
+    /*
+     * Reflections are free text in the student's own words, so their
+     * content is not checked, only their size. `text` and `barrier` are
+     * written by scripts/seedHistoricalData.mjs; the app writes
+     * `manageable` and `hard` (limited to 2000 characters in the UI).
+     */
+    function validReflection(data) {
+      return optionalString(data, 'manageable', 2000)
+        && optionalString(data, 'hard', 2000)
+        && optionalString(data, 'text', 2000)
+        && optionalString(data, 'barrier', 100);
+    }
+
 
     /*
      * ============================================================
@@ -116,7 +198,10 @@ service cloud.firestore {
       allow read: if isOwner(userId);
 
       allow create, update:
-        if isOwner(userId);
+        if isOwner(userId)
+        && validUserDoc(
+          request.resource.data
+        );
 
       allow delete:
         if isOwner(userId);
@@ -170,42 +255,25 @@ service cloud.firestore {
        * ==========================================================
        *
        * Reflection content remains private to the account owner.
-       * We do not impose content-format assumptions here because
-       * this part of the Nuvora schema remains intentionally
-       * flexible.
+       * Only its size is checked (see validReflection).
        */
       match /reflections/{reflectionId} {
 
-        allow read, create, update, delete:
+        allow read, delete:
           if isOwner(userId);
-      }
 
+        allow create, update:
+          if isOwner(userId)
+          && validReflection(
+            request.resource.data
+          );
+      }
 
       /*
-       * ==========================================================
-       * SETTINGS
-       * ==========================================================
-       *
-       * Covers a settings subcollection if used by the current
-       * persistence implementation.
+       * Settings and stats are FIELDS on users/{uid} (validated above by
+       * validUserDoc), not sub-collections, so there are no
+       * /settings or /stats rules: the default deny below refuses them.
        */
-      match /settings/{settingId} {
-
-        allow read, create, update, delete:
-          if isOwner(userId);
-      }
-
-
-      /*
-       * ==========================================================
-       * STATS
-       * ==========================================================
-       */
-      match /stats/{statsId} {
-
-        allow read, create, update, delete:
-          if isOwner(userId);
-      }
     }
 
 

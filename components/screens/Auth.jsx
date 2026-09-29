@@ -119,7 +119,7 @@ export function Auth() {
         <label>Email<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
         <label>Password<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength="6" aria-describedby={mode === 'signup' ? 'password-hint' : undefined} value={password} onChange={e => setPassword(e.target.value)} required /></label>
         {mode === 'signup' && <p className="hint" id="password-hint" style={{ margin: '-4px 0 4px' }}>At least 6 characters.</p>}
-        {mode === 'signup' && <label>What should Nuvora call you? (optional)<input type="text" autoComplete="nickname" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="You can skip this" /></label>}
+        {mode === 'signup' && <label>What should Nuvora call you? (optional)<input type="text" autoComplete="nickname" maxLength={100} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="You can skip this" /></label>}
         {mode === 'login' && <button type="button" className="link auth-forgot-link" onClick={() => { setResetEmail(email); setMode('reset'); }}>Forgot password?</button>}
         <StatusMessage text={error} tone="error" />
         <button className="primary auth-submit" disabled={busy}>{busy ? 'Please wait…' : (mode === 'login' ? 'Log in' : 'Create account')}</button>

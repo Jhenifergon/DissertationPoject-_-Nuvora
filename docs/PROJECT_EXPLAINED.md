@@ -9,9 +9,11 @@
   - [package.json](#packagejson)
   - [capacitor.config.ts](#capacitorconfigts)
   - [firebase.json](#firebasejson)
+  - [firestore.rules](#firestorerules)
   - [jsconfig.json](#jsconfigjson)
   - [vitest.config.js](#vitestconfigjs)
   - [vitest.setup.js](#vitestsetupjs)
+  - [vitest.rules.config.js](#vitestrulesconfigjs)
   - [serviceAccountKey.json](#serviceaccountkeyjson)
   - [app/layout.js](#applayoutjs)
   - [app/page.js](#apppagejs)
@@ -143,7 +145,7 @@ The rest of this document is organized in five parts, roughly following the depe
   - `start` — serves the exported static site with `npx serve@latest out`, i.e. the app is not run through a Node server in production; it's fully static.
   - `lint` — runs ESLint across the repo.
   - `test` / `test:coverage` — run the Vitest suite, optionally with V8 coverage.
-  - `test:rules` — spins up the Firebase emulator (Firestore only) and runs `firestore-rules.emulator-test.js` inside it, so Firestore security rules can be tested against a real emulator rather than mocked.
+  - `test:rules` — spins up the Firebase emulator (Firestore only) and runs `firestore-rules.emulator-test.js` inside it, using a dedicated `vitest.rules.config.js` config rather than the project's default Vitest config (see below), so Firestore security rules can be tested against a real emulator rather than mocked.
   - `android:sync` / `ios:sync` — build the static export, then run `npx cap sync <platform>` to copy the web assets and plugin configuration into the native projects.
   - `android:open` / `ios:open` — open the native IDE projects (Android Studio / Xcode) via Capacitor CLI.
 - **Dependencies**: Capacitor core plus the specific native plugins actually used elsewhere in the app (`@capacitor/android`, `@capacitor/ios`, `@capacitor/browser` for `ExternalLink`, `@capacitor/keyboard` and `@capacitor/status-bar` for native shell tweaks in `NuvoraApp.jsx`). `firebase` (client SDK) and `firebase-admin` (server/admin SDK, used by scripts and rules testing) are both present. `@fontsource/nunito` self-hosts the Nunito font (imported in `app/layout.js`) instead of depending on Google Fonts at runtime. `lucide-react` supplies icons throughout the UI. `zod` is available for schema validation (likely used in `lib/` for data validation, covered by other files).
@@ -166,16 +168,27 @@ This file makes clear the project is architected as: **static-exported Next.js a
 **Purpose:** Configuration for the Firebase CLI/emulator suite, specifically scoped to Firestore — it's the file that makes `npm run test:rules` possible.
 
 **Walkthrough:**
-- `"firestore": { "rules": "firestore.rules" }` — points the Firebase CLI at the project's Firestore security rules file (`firestore.rules`, covered elsewhere), so both `firebase deploy` and the emulator know which rules to apply.
-- `"emulators": { "firestore": { "port": 8080 } }` — configures the local Firestore emulator to listen on port 8080. Combined with the `test:rules` script (`firebase emulators:exec --only firestore "vitest run firestore-rules.emulator-test.js"`), this spins up a real (but local, ephemeral) Firestore instance with the actual security rules enforced, runs the rules test suite against it, and tears it down — giving genuine confidence that the rules behave as intended rather than relying on hand-written assertions about rule text.
+- `"firestore": { "rules": "firestore.rules" }` — points the Firebase CLI at the project's Firestore security rules file (`firestore.rules`, covered next), so both `firebase deploy` and the emulator know which rules to apply.
+- `"emulators": { "firestore": { "port": 8080 } }` — configures the local Firestore emulator to listen on port 8080. Combined with the `test:rules` script (`firebase emulators:exec --only firestore "vitest run --config vitest.rules.config.js"`), this spins up a real (but local, ephemeral) Firestore instance with the actual security rules enforced, runs the rules test suite against it, and tears it down — giving genuine confidence that the rules behave as intended rather than relying on hand-written assertions about rule text.
+
+### firestore.rules
+
+**Purpose:** The actual Firestore security rules deployed for the project — the single source of truth for who can read/write which documents, and what shape those documents must have. `firebase.json` points the CLI/emulator at this file; `firestore-rules.emulator-test.js` runs it against a live emulator; `firestore.rules.test.js` statically checks its text for expected patterns (both covered in Part 4).
+
+**Walkthrough:**
+- `isOwner(userId)`: the single ownership predicate used everywhere — `request.auth != null && request.auth.uid == userId`. Every `match` block below composes access from this one function, so there's one place to get ownership logic right rather than it being re-derived per collection.
+- `validTask(data)`: schema-validates a task document — `title` (non-empty string, ≤200 chars), `module` (string, ≤100 chars), `due` (string, ≤10 chars, i.e. a `YYYY-MM-DD` date), `bucket` (enum `today`/`week`/`later`), `done` (bool), and `currentStep` (a map with a string `id`, a string `text` ≤500 chars, and a bool `done`). `priority` is validated as an enum (`low`/`normal`/`high`) **only if present** — wrapped in `!('priority' in data) || (...)`, with a comment explaining this is deliberately optional because tasks created before the `priority` field existed predate it, and `lib/store.js`'s `migrateTask` only backfills a default client-side on read, so the rules must not reject an un-migrated document being read or partially updated.
+- `validRisk(data)`: schema-validates the `risk` field on a check-in — accepted if the field is absent entirely, **or explicitly `null`** (the "unsure" incomplete check-in path in `Checkin.jsx` saves `risk: null` rather than omitting the field), or a map with a `score` (number, 0–120 — note this is a wider ceiling than the 0–100 scale `lib/risk.js` normally produces, giving headroom for `combineWorkloadPressure`'s deadline-adjusted score before it's clamped), a `band` enum (`Low`/`Moderate`/`Higher`), and a `factors` map.
+- `validCheckin(data)`: requires an `answers` map, an optional `createdAt` that's either a Firestore `timestamp` or a `string` (covering both server-written and older/imported data), and delegates to `validRisk`.
+- **Per-user structure**: everything lives under `match /users/{userId}`, gated by `isOwner`. Nested `match` blocks add per-collection rules: `tasks/{taskId}` and `checkins/{checkinId}` require `isOwner` **and** `validTask`/`validCheckin` respectively on create/update (read and delete only require ownership); `reflections`, `settings`, and `stats` are owner-gated with no schema validation at all, deliberately left flexible.
+- **Default deny**: a closing `match /{document=**} { allow read, write: if false; }` denies everything not explicitly matched above — the comment stresses there is deliberately no recursive allow-all fallback, so any future collection added without its own rule is private by default rather than accidentally open.
 
 ### jsconfig.json
 
 **Purpose:** Enables the `@/*` import alias for plain JavaScript (non-TypeScript) files, which is what lets the rest of the codebase write imports like `@/components/NuvoraApp` instead of long relative paths (`../../components/NuvoraApp`).
 
 **Walkthrough:**
-- `"baseUrl": "."` sets the root for path resolution to the project root.
-- `"paths": {"@/*": ["./*"]}` maps any `@/xxx` import to `./xxx` relative to the project root. Next.js's own bundler (webpack/Turbopack) reads this automatically for editor tooling and path resolution in JS projects; this is the JS equivalent of a `tsconfig.json`'s `paths` field.
+- `"paths": {"@/*": ["./*"]}` maps any `@/xxx` import to `./xxx`, resolved relative to the directory containing this file (the project root) since no `baseUrl` is set — `baseUrl` defaulting to the config file's own directory means omitting it here has the same effect as the earlier explicit `"baseUrl": "."` did, just with one less redundant field. Next.js's own bundler (webpack/Turbopack) reads this automatically for editor tooling and path resolution in JS projects; this is the JS equivalent of a `tsconfig.json`'s `paths` field.
 - Notably, `vitest.config.js` has to manually re-declare the same alias for Vite/Vitest (see below), because Vitest doesn't read `jsconfig.json` — this file only governs Next.js/editor resolution.
 
 ### vitest.config.js
@@ -194,7 +207,16 @@ This file makes clear the project is architected as: **static-exported Next.js a
 **Purpose:** Global setup script that runs once before the Vitest suite, wiring in test-only capabilities that aren't part of the core Vitest API.
 
 **Walkthrough:**
-- Single line: `import '@testing-library/jest-dom/vitest';`. This registers Testing Library's custom DOM matchers (`toBeInTheDocument()`, `toHaveTextContent()`, `toBeVisible()`, etc.) as Vitest `expect` extensions. Without this import, any test using those matchers would fail with "not a function" errors — it's a small file, but it's a hard prerequisite for every component test in the suite (including the two accessibility/contrast tests covered below, if they used those matchers — here they use plain `expect().toContain`/`toMatch`, but other component tests elsewhere in the app likely do rely on this).
+- `import '@testing-library/jest-dom/vitest';` registers Testing Library's custom DOM matchers (`toBeInTheDocument()`, `toHaveTextContent()`, `toBeVisible()`, etc.) as Vitest `expect` extensions. Without this import, any test using those matchers would fail with "not a function" errors — it's a small file, but it's a hard prerequisite for every component test in the suite (including the two accessibility/contrast tests covered below, if they used those matchers — here they use plain `expect().toContain`/`toMatch`, but other component tests elsewhere in the app likely do rely on this).
+- A second block stubs `HTMLCanvasElement.prototype.getContext` to return `null` (guarded by `typeof HTMLCanvasElement !== 'undefined'` for environments where it isn't defined at all). The accompanying comment explains why: jsdom doesn't implement `<canvas>`, so it logs a noisy "Not implemented" error every time something calls `getContext` — and `axe-core`'s accessibility checks (used across `components/NuvoraApp.a11y.test.jsx` and elsewhere) call it as part of an icon-ligature heuristic. `axe-core` already handles a `null` context gracefully, so this stub just silences the console noise rather than changing any test's pass/fail outcome.
+
+### vitest.rules.config.js
+
+**Purpose:** A second, narrowly-scoped Vitest config used only by `npm run test:rules`, existing solely so `firestore-rules.emulator-test.js` can be run explicitly despite not matching the main `vitest.config.js`'s default test-discovery pattern.
+
+**Walkthrough:**
+- `test.environment: 'node'` — unlike the main config's `jsdom` environment, the rules test doesn't render any React components or touch the DOM; it only talks to the Firestore emulator over the network, so a plain Node environment is correct (and faster to start).
+- `test.include: ['firestore-rules.emulator-test.js']` — explicitly whitelists just this one file. The comment explains why this file exists at all rather than just passing the filename on the `vitest run` command line: Vitest's CLI filename argument only *filters* whatever the active config's `include` pattern already matches, it doesn't add new files to be discovered — so passing `firestore-rules.emulator-test.js` on the command line against the main config (whose `include` doesn't match `*.emulator-test.js`) would silently run zero tests rather than the intended file. `package.json`'s `test:rules` script points at this config via `vitest run --config vitest.rules.config.js` specifically to sidestep that trap.
 
 ### serviceAccountKey.json
 
@@ -1293,16 +1315,16 @@ Guarantee: the timer display is always a clean, non-negative, zero-padded `M:SS`
 
 ### firestore-rules.emulator-test.js
 
-This file tests the **actual deployed `firestore.rules`** by running them against a real local Firestore emulator via `@firebase/rules-unit-testing` (`initializeTestEnvironment`, `assertSucceeds`/`assertFails`). It is an integration-style test of live rule enforcement, not a check of the rules file's text. A prominent comment block at the top of the file is important context: this file deliberately does **not** match Vitest's default test-discovery pattern (so `npm test` skips it), and it was written but **never actually executed** in the environment it was authored in, because that sandbox's network policy blocks downloading the emulator binary from `storage.googleapis.com`. The author is explicit that "written correctly" and "verified passing" are different claims here — running it for real requires the Firebase CLI, Java, and `npm run test:rules` locally.
+This file tests the **actual deployed `firestore.rules`** by running them against a real local Firestore emulator via `@firebase/rules-unit-testing` (`initializeTestEnvironment`, `assertSucceeds`/`assertFails`). It is an integration-style test of live rule enforcement, not a check of the rules file's text. A prominent comment block at the top of the file is important context: these tests are **not** run as part of `npm test` — the filename deliberately doesn't match Vitest's default `*.test.js` discovery pattern, so running them requires the dedicated `vitest.rules.config.js` config (see Part 1) via `npm run test:rules` — and they were written but **not actually executed** in the environment they were authored in, because that sandbox's network policy blocks downloading the emulator binary from `storage.googleapis.com`. The author is explicit that "written correctly" and "verified passing" are different claims here — running it for real requires the Firebase CLI, Java, and `npm run test:rules` locally.
 
-Setup: `beforeAll` spins up a test Firestore environment loaded with the real `firestore.rules` file content; `beforeEach` clears all Firestore data between tests; a `dbAs(uid)` helper returns a Firestore client authenticated as a given user (or unauthenticated if `uid` is falsy).
+Setup: `beforeAll` spins up a test Firestore environment loaded with the real `firestore.rules` file content; `beforeEach` clears all Firestore data between tests; a `dbAs(uid)` helper returns a Firestore client authenticated as a given user (or unauthenticated if `uid` is falsy). A module-level `task(overrides)` helper builds a complete, rules-valid task object (title/module/due/priority/bucket/done/currentStep) mirroring exactly what `components/screens/Tasks.jsx` actually writes, so every test that needs "some valid task" builds one from this single shared shape (optionally overriding specific fields) rather than each hand-rolling its own ad hoc partial object that might drift from what `validTask` in `firestore.rules` actually requires.
 
 - **"users/{userId} document"**:
   - A signed-in user can read and write their own top-level user document.
   - A signed-in user is blocked from reading or writing another user's document (tested as separate read and write cases).
   - An unauthenticated request is blocked entirely, even for a `get`.
 - **"nested subcollections (tasks, checkins, reflections)"**: a parameterized loop over the three subcollections, for each verifying:
-  - A signed-in user can read and write their own documents in that subcollection.
+  - A signed-in user can read and write their own documents in that subcollection (using `task(...)` for the tasks fixture, and a `risk` object that includes `factors: {}` for the checkins fixture, so both match `firestore.rules`'s schema exactly).
   - A signed-in user cannot read another user's documents in that subcollection.
   - A signed-in user cannot write into another user's subcollection.
   - An unauthenticated request cannot read the subcollection at all.
@@ -1310,18 +1332,18 @@ Setup: `beforeAll` spins up a test Firestore environment loaded with the real `f
   - A well-formed task (title, done, priority, module, due) is accepted.
   - A task missing `title`, or with a non-string `title`, is rejected.
   - A task whose `done` field isn't a boolean is rejected.
-  - A `priority` value outside the allowed enum is rejected, while omitting `priority` entirely is accepted (it's optional).
-  - A **partial update** (mirroring how `lib/store.js`'s `updateTask` actually writes) is validated against the full resulting merged document, not just the fields being changed — confirming the rules correctly evaluate `request.resource.data` post-merge.
+  - A `priority` value outside the allowed enum is rejected, while a task with the `priority` field omitted entirely (built via destructuring `priority` out of `task()`) is accepted — matching `validTask`'s explicit `!('priority' in data) || (...)` carve-out for tasks created before the `priority` field existed.
+  - A **partial update** (mirroring how `lib/store.js`'s `updateTask` actually writes, starting from a full `task(...)`) is validated against the full resulting merged document, not just the fields being changed — confirming the rules correctly evaluate `request.resource.data` post-merge.
 - **"check-in schema validation"**:
-  - A valid, fully scored check-in (answers + risk score/band/message) is accepted.
-  - An intentionally incomplete check-in with `risk: null` and an `incomplete: true` flag (the "not sure" answer path) is explicitly accepted — schema validation doesn't force every check-in to have a full score.
+  - A valid, fully scored check-in (answers + risk score/band/message/factors) is accepted.
+  - An intentionally incomplete check-in with `risk: null` and an `incomplete: true` flag (the "not sure" answer path from `Checkin.jsx`) is explicitly accepted — matching `validRisk`'s explicit `data.risk == null` case, not just the "field absent" case.
   - A score above 100, a negative score, a band outside `Low`/`Moderate`/`Higher`, and a non-numeric score are all separately rejected.
 - **"deletion (matches lib/store.js delete* functions)"**:
-  - A signed-in user can delete their own documents (e.g. a task).
+  - A signed-in user can delete their own documents (e.g. a task, built via `task()`).
   - A signed-in user cannot delete another user's documents.
   - A signed-in user can delete their own top-level `users/{uid}` document, supporting a full account-data wipe.
 
-Guarantee (once actually run against a live emulator): Firestore enforces strict per-user ownership on every collection and subcollection, blocks all cross-user and unauthenticated access, and validates task/check-in document shapes (including enum and numeric-range constraints) both on full writes and partial updates — matching the access patterns `lib/store.js` actually uses. As the file's own comment states, this coverage is currently unverified-by-execution in this environment and should be run locally via the emulator before being trusted as passing.
+Guarantee (once actually run against a live emulator): Firestore enforces strict per-user ownership on every collection and subcollection, blocks all cross-user and unauthenticated access, and validates task/check-in document shapes (including enum and numeric-range constraints, and the optional/nullable carve-outs for pre-`priority` tasks and incomplete check-ins) both on full writes and partial updates — matching the access patterns `lib/store.js` actually uses. As the file's own comment states, this coverage is currently unverified-by-execution in this environment and should be run locally via the emulator (`npm run test:rules`) before being trusted as passing.
 
 ### firestore.rules.test.js
 

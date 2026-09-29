@@ -99,18 +99,41 @@ describe(
     );
 
     it(
-      'has explicit owner-only rules for reflections, settings and stats',
+      'validates reflections and the settings/stats fields on users/{uid}',
       () => {
         expect(rules).toContain(
           'match /reflections/{reflectionId}'
         );
 
         expect(rules).toContain(
+          'function validReflection(data)'
+        );
+
+        // Settings and stats are fields on users/{uid}, not
+        // sub-collections, so they are validated on that document.
+        expect(rules).toContain(
+          'function validUserDoc(data)'
+        );
+
+        expect(rules).not.toContain(
           'match /settings/{settingId}'
         );
 
-        expect(rules).toContain(
+        expect(rules).not.toContain(
           'match /stats/{statsId}'
+        );
+      }
+    );
+
+    it(
+      'caps the stored pressure score at 100, matching the app',
+      () => {
+        expect(rules).toContain(
+          'data.risk.score <= 100'
+        );
+
+        expect(rules).not.toContain(
+          'data.risk.score <= 120'
         );
       }
     );
